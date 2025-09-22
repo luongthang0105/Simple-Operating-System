@@ -1,0 +1,66 @@
+{
+    "configurations": [
+        {
+            "name": "AOS",
+            "includePath": [
+                "${workspaceFolder}/build/libsel4/autoconf",
+                "${workspaceFolder}/build/kernel/gen_config",
+                "${workspaceFolder}/build/libsel4/gen_config",
+                "${workspaceFolder}/projects/sel4runtime/include",
+                "${workspaceFolder}/projects/sel4runtime/include/mode/64",
+                "${workspaceFolder}/projects/sel4runtime/include/sel4_arch/aarch64",
+                "${workspaceFolder}/kernel/libsel4/include",
+                "${workspaceFolder}/kernel/libsel4/arch_include/arm",
+                "${workspaceFolder}/kernel/libsel4/sel4_arch_include/aarch64",
+                "${workspaceFolder}/kernel/libsel4/sel4_plat_include/odroidc2",
+                "${workspaceFolder}/kernel/libsel4/mode_include/64",
+                "${workspaceFolder}/build/libsel4/include",
+                "${workspaceFolder}/build/libsel4/arch_include/arm",
+                "${workspaceFolder}/build/libsel4/sel4_arch_include/aarch64",
+                "${workspaceFolder}/build/projects/musllibc/build-temp/stage/include",
+                "${workspaceFolder}/projects/libelf/include",
+                "${workspaceFolder}/projects/libcpio/include",
+                "${workspaceFolder}/projects/aos/libnetworkconsole/include",
+                "${workspaceFolder}/build/projects/libpicotcp/picotcp_external/picotcp/build/include",
+                "${workspaceFolder}/build/projects/libpicotcp/gen_config",
+                "${workspaceFolder}/projects/aos/libsosapi/include",
+                "${workspaceFolder}/projects/libutils/include",
+                "${workspaceFolder}/projects/libutils/arch_include/arm",
+                "${workspaceFolder}/build/projects/libutils/gen_config",
+                "${workspaceFolder}/build/projects/aos/sos/gen_config",
+                "${workspaceFolder}/projects/aos/libdebugger/include",
+                "${workspaceFolder}/projects/aos/libclock/include",
+                "${workspaceFolder}/projects/aos/libsel4cspace/include",
+                "${workspaceFolder}/projects/aos/libaos/include",
+                "${workspaceFolder}/projects/picotcp-bsd",
+                "${workspaceFolder}/libnfs/lib/../include",
+                "${workspaceFolder}/libnfs/rquota",
+                "${workspaceFolder}/libnfs/portmap",
+                "${workspaceFolder}/libnfs/nsm",
+                "${workspaceFolder}/libnfs/nlm",
+                "${workspaceFolder}/libnfs/nfs4",
+                "${workspaceFolder}/libnfs/nfs",
+                "${workspaceFolder}/libnfs/mount",
+                "${workspaceFolder}/projects/aos/libethernet/include",
+                "${workspaceFolder}/projects/libgdb/include",
+                "${workspaceFolder}/projects/libco"
+            ],
+            "defines": [
+                "STDSOCKET",
+                "_SYS_POLL_H",
+                "__KERNEL_64__"
+            ],
+            "compilerPath": "/usr/bin/aarch64-linux-gnu-gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++11",
+            "intelliSenseMode": "linux-gcc-arm64",
+            "compilerArgs": [
+                "-nostdinc"
+            ],
+            "forcedInclude": [
+                "${workspaceFolder}/.vscode/preinclude.h"
+            ]
+        }
+    ],
+    "version": 4
+}
