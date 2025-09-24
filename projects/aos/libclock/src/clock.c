@@ -10,6 +10,7 @@
  * @TAG(DATA61_GPL)
  */
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <clock/clock.h>
 
@@ -19,6 +20,7 @@
 
 static struct {
     volatile meson_timer_reg_t *regs;
+    volatile bool has_started;
     /* Add fields as you see necessary */
 } clock;
 
@@ -30,17 +32,35 @@ int start_timer(unsigned char *timer_vaddr)
     }
 
     clock.regs = (meson_timer_reg_t *)(timer_vaddr + TIMER_REG_START);
-
+    // start the internal counter, assume the tick frequency is in microseconds
+    configure_timestamp(clock.regs, TIMESTAMP_TIMEBASE_1_US);
+    // allow timers to be registered
+    clock.has_started = true;
     return CLOCK_R_OK;
 }
 
+timestamp_t get_time(void) {
+    return read_timestamp(clock.regs);
+}
+
 uint32_t register_timer(uint64_t delay, timer_callback_t callback, void *data)
-{
-    return 0;
+{   
+    configure_timeout(clock.regs, MESON_TIMER_A, true, false, TIMEOUT_TIMEBASE_1_US, delay);
+    // get the id from id-heap
+
+    // push next id to id-heap
+
+    // add id -> callback
+
+    // push to min heap the (delay, id)
+    return 1;
 }
 
 int remove_timer(uint32_t id)
 {
+    // remove id -> callback entry
+
+    // add id back to the id-heap
     return CLOCK_R_FAIL;
 }
 
@@ -51,8 +71,8 @@ int timer_irq(
 )
 {
     /* Handle the IRQ */
-
     /* Acknowledge that the IRQ has been handled */
+    seL4_IRQHandler_Ack(irq_handler);
     return CLOCK_R_FAIL;
 }
 
@@ -60,5 +80,6 @@ int stop_timer(void)
 {
     /* Stop the timer from producing further interrupts and remove all
      * existing timeouts */
-    return CLOCK_R_FAIL;
+    // return CLOCK_R_FAIL;
+    return CLOCK_R_OK;
 }
