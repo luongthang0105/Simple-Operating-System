@@ -14,16 +14,19 @@
 #include <stdint.h>
 #include <clock/clock.h>
 #include <utils/sc_heap.h>
-
+#include <utils/cset.h>
 /* The functions in src/device.h should help you interact with the timer
  * to set registers and configure timeouts. */
 #include "device.h"
+Cset(uint32_t) cset;
 
 static struct {
     volatile meson_timer_reg_t *regs;
     volatile bool has_started;
     /* Add fields as you see necessary */
     struct sc_heap timeout_heap;
+    cset removed_ids;
+    cset used_ids;
     uint32_t next_timer_id;
 } clock;
 
@@ -48,6 +51,9 @@ int start_timer(unsigned char *timer_vaddr)
     
     // allow timers to be registered
     clock.has_started = true;
+
+    cset__init(&clock.removed_ids);
+    cset__init(&clock.used_ids);
 
     // first timer id starts with 1
     clock.next_timer_id = 1;
@@ -93,6 +99,7 @@ uint32_t register_timer(uint64_t delay, timer_callback_t callback, void *data)
         return 0;
     }
 
+    cset__add(&clock.used_ids, timer_id);
     return timer_id;
 }
 
@@ -110,10 +117,28 @@ bool reconfigure_timer_to_next_earliest_timeout() {
 }
 int remove_timer(uint32_t id)
 {
-    // remove id -> callback entry
-    // call configure_timeout with enable = false
-    // add id back to the id-heap
-    return CLOCK_R_FAIL;
+    bool used = false;
+    cset__contains(&clock.used_ids, id, &used);
+    if (!used) {
+        return CLOCK_R_FAIL;
+    }
+    // if the timeout is already being processed, then we pop it out of the heap and disable the timer
+    struct timeout_data *next_earliest_timeout_data = sc_heap_peek(&clock.timeout_heap);
+    if (next_earliest_timeout_data == NULL) {
+        return CLOCK_R_FAIL;
+    }
+
+    if (next_earliest_timeout_data->id == id) {
+        // disable the timeout timer
+        configure_timeout(clock.regs, MESON_TIMER_A, false, false, TIMEOUT_TIMEBASE_1_US, 0);
+        sc_heap_pop(&clock.timeout_heap);
+        reconfigure_timer_to_next_earliest_timeout();
+    } else {
+        cset__add(&clock.removed_ids, id);
+    }
+
+    cset__remove(&clock.used_ids, id);
+    return CLOCK_R_OK;
 }
 
 int timer_irq(
