@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <clock/clock.h>
+#include <utils/sc_heap.h>
 
 /* The functions in src/device.h should help you interact with the timer
  * to set registers and configure timeouts. */
@@ -22,7 +23,25 @@ static struct {
     volatile meson_timer_reg_t *regs;
     volatile bool has_started;
     /* Add fields as you see necessary */
+    struct sc_heap timeout_heap;
+    struct sc_heap id_heap;
 } clock;
+
+struct id_heap_data {
+    uint32_t id;
+};
+
+struct timeout_data {
+    uint32_t id;
+    timer_callback_t callback;
+};
+
+struct timeout_heap_data {
+    // The time when the delay ends. Will be used as key to determine priority.
+    timestamp_t timeout_time;
+
+    struct timeout_data *timeout_data;
+};
 
 int start_timer(unsigned char *timer_vaddr)
 {
@@ -32,10 +51,18 @@ int start_timer(unsigned char *timer_vaddr)
     }
 
     clock.regs = (meson_timer_reg_t *)(timer_vaddr + TIMER_REG_START);
+    
     // start the internal counter, assume the tick frequency is in microseconds
     configure_timestamp(clock.regs, TIMESTAMP_TIMEBASE_1_US);
+    
     // allow timers to be registered
     clock.has_started = true;
+
+    // add the first id = 1 to id_heap
+    uint32_t* id_ptr = malloc(sizeof(uint32_t));
+    *id_ptr = 1;
+    sc_heap_add(&clock.id_heap, 1, id_ptr);
+
     return CLOCK_R_OK;
 }
 
@@ -59,7 +86,7 @@ uint32_t register_timer(uint64_t delay, timer_callback_t callback, void *data)
 int remove_timer(uint32_t id)
 {
     // remove id -> callback entry
-
+    // call configure_timeout with enable = false
     // add id back to the id-heap
     return CLOCK_R_FAIL;
 }
