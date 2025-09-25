@@ -553,7 +553,7 @@ void init_muslc(void)
 }
 void *callback_example(uint32_t id, void *data)
 {
-    ZF_LOGE("callback function triggered\n");
+    printf("callback function triggered: %s\n", data);
 }
 NORETURN void *main_continued(UNUSED void *arg)
 {
@@ -606,18 +606,22 @@ NORETURN void *main_continued(UNUSED void *arg)
     start_timer(timer_vaddr);
     /* You will need to register an IRQ handler for the timer here.
      * See "irq.h". */
-char data[] = "hihi";
+    char data[] = "hihi";
 
     seL4_Word irq_number = meson_timeout_irq(MESON_TIMER_A);
     bool edge_triggered = true;
     seL4_IRQHandler irq_handler = 0;
 
-    int init_irq_err = sos_register_irq_handler(irq_number, edge_triggered, timer_irq, data, &irq_handler);
+    int init_irq_err = sos_register_irq_handler(irq_number, edge_triggered, timer_irq, NULL, &irq_handler);
     ZF_LOGF_IF(init_irq_err != 0, "Failed to initialise IRQ");
     seL4_IRQHandler_Ack(irq_handler);
 
     /* register timer */
-    uint32_t timer_id = register_timer(1000, callback_example, data);
+    uint32_t timer_id = register_timer(100000, callback_example, data);
+    // char data1[] = "hehe";
+    // register_timer(90000, callback_example, data1);
+    // char data2[] = "hoho";
+    // register_timer(50500, callback_example, data2);
     /* Start the user application */
     printf("Start first process\n");
     bool success = start_first_process(APP_NAME, ipc_ep);
