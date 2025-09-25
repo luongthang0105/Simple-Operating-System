@@ -24,23 +24,14 @@ static struct {
     volatile bool has_started;
     /* Add fields as you see necessary */
     struct sc_heap timeout_heap;
-    struct sc_heap id_heap;
+    uint32_t next_timer_id;
 } clock;
-
-struct id_heap_data {
-    uint32_t id;
-};
 
 struct timeout_data {
     uint32_t id;
+    timestamp_t timeout_timestamp;
     timer_callback_t callback;
-};
-
-struct timeout_heap_data {
-    // The time when the delay ends. Will be used as key to determine priority.
-    timestamp_t timeout_time;
-
-    struct timeout_data *timeout_data;
+    void* data;
 };
 
 int start_timer(unsigned char *timer_vaddr)
@@ -58,11 +49,8 @@ int start_timer(unsigned char *timer_vaddr)
     // allow timers to be registered
     clock.has_started = true;
 
-    // add the first id = 1 to id_heap
-    uint32_t* id_ptr = malloc(sizeof(uint32_t));
-    *id_ptr = 1;
-    sc_heap_add(&clock.id_heap, 1, id_ptr);
-
+    // first timer id starts with 1
+    clock.next_timer_id = 1;
     return CLOCK_R_OK;
 }
 
@@ -72,17 +60,54 @@ timestamp_t get_time(void) {
 
 uint32_t register_timer(uint64_t delay, timer_callback_t callback, void *data)
 {   
-    configure_timeout(clock.regs, MESON_TIMER_A, true, false, TIMEOUT_TIMEBASE_1_US, delay);
-    // get the id from id-heap
-
-    // push next id to id-heap
-
-    // add id -> callback
+    // configure_timeout(clock.regs, MESON_TIMER_A, true, false, TIMEOUT_TIMEBASE_1_US, delay);
+    // get the id for this timer
+    uint32_t timer_id = clock.next_timer_id;
+   
+    // update to next id
+    if (clock.next_timer_id == UINT32_MAX) { // when id is currently UINT32_MAX, next id must be 1, due to `register_timer()` return value requirements (returns 0 on failure)
+        clock.next_timer_id = 1;
+    } else {
+        clock.next_timer_id += 1;
+    }
 
     // push to min heap the (delay, id)
-    return 1;
+    struct timeout_data *timeout_data = malloc(sizeof(struct timeout_data));
+    if (timeout_data == NULL) {
+        return 0;
+    }
+
+    timeout_data->callback = callback;
+    timeout_data->id = timer_id;
+    timeout_data->data = data;
+    timeout_data->timeout_timestamp = get_time() + delay;
+
+    bool ret = sc_heap_add(&clock.timeout_heap, timeout_data->timeout_timestamp, timeout_data);
+    if (!ret) {
+        return 0;
+    }
+
+    ret = reconfigure_timer_to_next_earliest_timeout();
+
+    if (!ret) {
+        return 0;
+    }
+
+    return timer_id;
 }
 
+bool reconfigure_timer_to_next_earliest_timeout() {
+    struct timeout_data *next_earliest_timeout_data = sc_heap_peek(&clock.timeout_heap);
+    if (next_earliest_timeout_data == NULL) {
+        return false;
+    }
+    
+    timestamp_t next_earliest_timeout = next_earliest_timeout_data->timeout_timestamp;
+    uint16_t num_ticks = next_earliest_timeout - get_time();
+    configure_timeout(clock.regs, MESON_TIMER_A, true, false, TIMEOUT_TIMEBASE_1_US, num_ticks);
+
+    return true;
+}
 int remove_timer(uint32_t id)
 {
     // remove id -> callback entry
