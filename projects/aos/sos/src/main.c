@@ -551,23 +551,23 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_ppoll, sys_ppoll);
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
 }
-void *callback_example(uint32_t id, void *data)
+void callback_example(uint32_t id, void *data)
 {
     printf("callback function triggered: %s\n", data);
 }
 
-void *callback_every_x_secs(uint32_t id, void *data)
+void callback_every_x_secs(uint32_t id, void *data)
 {
     int x = *((int*)data);
     printf("Periodic timer every %d secs, time = %lu\n", x, get_time());
     register_timer(x * 1000000, callback_every_x_secs, data);
 }
 
-void *callback_every_x_millisecs(uint32_t id, void *data)
+void callback_every_x_microsecs(uint32_t id, void *data)
 {
-    int x = *((int*)data) * 1000;
+    int x = *((int*)data);
     printf("Periodic timer every %d microsecs, time = %lu\n", x, get_time());
-    register_timer(x, callback_every_x_millisecs, data);
+    register_timer(x, callback_every_x_microsecs, data);
 }
 
 NORETURN void *main_continued(UNUSED void *arg)
@@ -652,8 +652,8 @@ NORETURN void *main_continued(UNUSED void *arg)
     // register_timer(1500000, callback_example, data3);
 
     // very fast timer
-    int timer_3_freq = 1;
-    register_timer(timer_3_freq * 100000, callback_every_x_millisecs, &timer_3_freq);
+    int timer_3_freq = 10000;
+    register_timer(timer_3_freq, callback_every_x_microsecs, &timer_3_freq);
 
     /* Start the user application */
     printf("Start first process\n");
