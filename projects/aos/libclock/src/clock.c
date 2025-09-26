@@ -72,6 +72,11 @@ timestamp_t get_time(void) {
     return read_timestamp(clock.regs);
 }
 
+void heap_pop_then_free() {
+    struct sc_heap_data *removed_data = sc_heap_pop(&clock.timeout_heap);
+    free(removed_data->data);
+}
+
 // Returns true when exist a timeout task to configure. Returns false when no timeout task exists.
 bool reconfigure_timer_to_next_earliest_timeout() {
     struct sc_heap_data *next_earliest_timeout;
@@ -85,7 +90,7 @@ bool reconfigure_timer_to_next_earliest_timeout() {
         bool removed = false;
         cset__contains(&clock.removed_ids, next_earliest_timeout_data->id , &removed);
         if (removed) {
-            sc_heap_pop(&clock.timeout_heap);
+            heap_pop_then_free();
             continue;
         }
         timestamp_t curr_time = get_time();
@@ -198,8 +203,7 @@ int remove_timer(uint32_t id)
         // disable the timeout timer
         configure_timeout(clock.regs, MESON_TIMER_A, false, false, TIMEOUT_TIMEBASE_1_US, 0);
         
-        void *data = sc_heap_pop(&clock.timeout_heap);
-        free(data);
+        heap_pop_then_free();
 
         reconfigure_timer_to_next_earliest_timeout();
     } else { // add it to a set so we can skip it later during timer_irq
@@ -237,8 +241,7 @@ int timer_irq(
         current_timeout_data = *((struct timeout_data*)(current_timeout->data));
         if (current_timeout_data.timeout_timestamp > current_timestamp) break;
         
-        void *data = sc_heap_pop(&clock.timeout_heap);
-        free(data);
+        heap_pop_then_free();
 
         // skip removed timeout
         bool removed = false;
@@ -263,13 +266,17 @@ int stop_timer(void)
     // disable timer
     configure_timeout(clock.regs, MESON_TIMER_A, false, false, TIMEOUT_TIMEBASE_1_US, 0);
     
-    // clear the heap. Frees every item in it
+    // clear the heap. Frees the timeout_data that we malloc'ed when sc_heap_add
     struct sc_heap_data *current_timeout;
-    while ((current_timeout = sc_heap_peek(&clock.timeout_heap)) &&
+    while ((current_timeout = sc_heap_pop(&clock.timeout_heap)) &&
             current_timeout != NULL) {
         free(current_timeout->data);
-        free(current_timeout);
     }
+    sc_heap_term(&clock.timeout_heap);
+
+    // clear the id set
+    cset__clear(&clock.used_ids);
+    cset__clear(&clock.removed_ids);
 
     return CLOCK_R_OK;
 }
