@@ -83,7 +83,6 @@ bool reconfigure_timer_to_next_earliest_timeout() {
 
         timestamp_t next_earliest_timeout = next_earliest_timeout_data->timeout_timestamp;
         uint16_t num_ticks = (next_earliest_timeout - get_time()) / 100;
-        printf("num sticks: %d \n", num_ticks);
         configure_timeout(clock.regs, MESON_TIMER_A, true, true, TIMEOUT_TIMEBASE_100_US, num_ticks);
         break;
     }
@@ -174,19 +173,15 @@ int timer_irq(
     }
 
     struct timeout_data *current_timeout_data = current_timeout->data;
-    printf("current_timestamp: %lu\n", current_timestamp);
-    printf("most recent timeout timestamp: %lu\n", current_timeout_data->timeout_timestamp);
     if (current_timeout_data->timeout_timestamp > current_timestamp) {
         return CLOCK_R_FAIL;
     }
     // invoke registered callback for all expired timeouts
     while ( (current_timeout = sc_heap_peek(&clock.timeout_heap)) && 
             current_timeout != NULL) {
-        printf("current timeout key: %lu\n", current_timeout->key);
         current_timeout_data = current_timeout->data;
         if (current_timeout_data->timeout_timestamp > current_timestamp) break;
         sc_heap_pop(&clock.timeout_heap);
-        printf("after pop!: \n");
 
         // skip removed timeout
         bool removed = false;
