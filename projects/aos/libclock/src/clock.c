@@ -88,8 +88,8 @@ bool reconfigure_timer_to_next_earliest_timeout() {
             sc_heap_pop(&clock.timeout_heap);
             continue;
         }
-        printf("Reconfigure to delay for %lu \n", next_earliest_timeout_data->delay);
-        uint16_t num_ticks = get_time() - next_earliest_timeout_data->timeout_timestamp;
+        timestamp_t curr_time = get_time();
+        uint16_t num_ticks = next_earliest_timeout_data->timeout_timestamp - curr_time;
         configure_timeout(clock.regs, MESON_TIMER_A, true, false, TIMEOUT_TIMEBASE_1_US, num_ticks);
         break;
     }
