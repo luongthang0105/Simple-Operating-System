@@ -33,6 +33,7 @@ static struct {
 struct timeout_data {
     uint32_t id;
     timestamp_t timeout_timestamp;
+    uint16_t delay;
     timer_callback_t callback;
     void* data;
 };
@@ -53,7 +54,7 @@ int start_timer(unsigned char *timer_vaddr)
 
     clock.regs = (meson_timer_reg_t *)(timer_vaddr + TIMER_REG_START);
     
-    // start the internal counter, assume the tick frequency is 100us
+    // start the internal counter, assume the tick frequency is 1us
     configure_timestamp(clock.regs, TIMESTAMP_TIMEBASE_1_US);
     
     // allow timers to be registered
@@ -87,10 +88,8 @@ bool reconfigure_timer_to_next_earliest_timeout() {
             sc_heap_pop(&clock.timeout_heap);
             continue;
         }
-
-        timestamp_t next_earliest_timeout = next_earliest_timeout_data->timeout_timestamp;
-        uint16_t num_ticks = (next_earliest_timeout - get_time()) / 100;
-        configure_timeout(clock.regs, MESON_TIMER_A, true, true, TIMEOUT_TIMEBASE_100_US, num_ticks);
+        printf("Reconfigure to delay for %lu \n", next_earliest_timeout_data->delay);
+        configure_timeout(clock.regs, MESON_TIMER_A, true, false, TIMEOUT_TIMEBASE_1_US, next_earliest_timeout_data->delay);
         break;
     }
 
@@ -119,7 +118,8 @@ bool configure_timeout_data(
     if (delay > (uint64_t) UINT16_MAX) {
         timeout_data->callback = connecting_callback;
         timeout_data->timeout_timestamp = get_time() + (uint64_t) UINT16_MAX;
-        
+        timeout_data->delay = (uint64_t) UINT16_MAX;
+
         // construct callback data for connecting_callback()
         struct register_timer_data *register_timer_data = malloc(sizeof(struct register_timer_data));
         if (register_timer_data == NULL) {
@@ -134,6 +134,7 @@ bool configure_timeout_data(
 
         timeout_data->data = register_timer_data;
     } else {
+        timeout_data->delay = delay;
         timeout_data->callback = callback;
         timeout_data->data = callback_data;
         timeout_data->timeout_timestamp = get_time() + delay;
