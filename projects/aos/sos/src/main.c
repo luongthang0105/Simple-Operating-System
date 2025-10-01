@@ -87,6 +87,28 @@ cspace_t cspace;
 static seL4_CPtr sched_ctrl_start;
 static seL4_CPtr sched_ctrl_end;
 
+// static struct user_thread {
+//     ut_t *tcb_ut;
+//     seL4_CPtr tcb;
+
+//     seL4_CPtr user_ep;
+//     seL4_CPtr fault_ep;
+//     ut_t *ipc_buffer_ut;
+//     seL4_CPtr ipc_buffer;
+//     seL4_Word ipc_buffer_vaddr;
+
+//     ut_t *sched_context_ut;
+//     seL4_CPtr sched_context;
+
+//     ut_t *stack_ut;
+//     seL4_CPtr stack;
+//     seL4_Word badge;
+
+//     uintptr_t tls_base;
+
+//     struct user_thread* next_thread;
+// };
+
 /* the one process we start */
 static struct {
     ut_t *tcb_ut;
@@ -104,13 +126,19 @@ static struct {
 
     ut_t *stack_ut;
     seL4_CPtr stack;
+    sos_thread_t* thread;
 } user_process;
 
+struct handle_syscall_args {
+    seL4_Word badge;
+    int num_args;
+    bool* have_reply;
+};
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
  */
-seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply)
+seL4_MessageInfo_t handle_syscall(struct handle_syscall_args *arg)
 {
     seL4_MessageInfo_t reply_msg;
 
@@ -119,28 +147,29 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     seL4_Word syscall_number = seL4_GetMR(0);
 
     /* Set the reply flag */
-    *have_reply = true;
+    arg->have_reply = true;
 
     /* Process system call */
     switch (syscall_number) {
     case SOS_SYSCALL0:
-        ZF_LOGV("syscall: thread example made syscall 0!\n");
+        ZF_LOGE("syscall: thread example made syscall 0!\n");
         /* construct a reply message of length 1 */
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
         /* Set the first (and only) word in the message to 0 */
         seL4_SetMR(0, 0);
-
         break;
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         ZF_LOGE("Unknown syscall %lu\n", syscall_number);
         /* Don't reply to an unknown syscall */
-        *have_reply = false;
+        arg->have_reply = false;
     }
 
     return reply_msg;
 }
-
+void thread_read_main(void *arg) {
+    printf("hello im in thread read\n");
+}
 NORETURN void syscall_loop(seL4_CPtr ep)
 {
     seL4_CPtr reply;
@@ -178,7 +207,20 @@ NORETURN void syscall_loop(seL4_CPtr ep)
 
             /* It's not a fault or an interrupt, it must be an IPC
              * message from console_test! */
-            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
+            // reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
+            // spawn a thread
+            char buf[10];
+
+            printf("BEFORE CREATE A THREAD\n");
+            /* Create an notification object */
+            seL4_CPtr ntfn;
+            ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
+            ZF_LOGF_IF(!ut, "No memory for notification object");
+            struct handle_syscall_args *arg = malloc(sizeof(struct handle_syscall_args));
+            arg->badge = badge;
+            arg->have_reply = &have_reply;
+            arg->num_args = seL4_MessageInfo_get_length(message) - 1;
+            sos_thread_t* thread = thread_create(handle_syscall, arg, badge, true, seL4_MinPrio, ntfn, false);
         } else {
             /* some kind of fault */
             debug_print_fault(message, APP_NAME);
