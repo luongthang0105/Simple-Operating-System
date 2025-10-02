@@ -305,6 +305,7 @@ char small_buf[SMALL_BUF_SZ];
 int test_buffers(int console_fd) {
    /* test a small string from the code segment */
    int result = sos_write(console_fd, test_str, strlen(test_str));
+//    assert(result == -1);
    assert(result == strlen(test_str));
 
 //    /* test reading to a small buffer */
@@ -335,8 +336,11 @@ int test_buffers(int console_fd) {
 
 int main(void) {
     printf("SOSH Starting!!\n");
-    int console_fd = sos_open("console", O_WRONLY);
+    int console_fd = sos_open("console", O_RDONLY);
+    console_fd = sos_open("console", O_WRONLY);
+    assert(console_fd == CONSOLE_FD);
     test_buffers(console_fd);
+    while(1);
 }
 // int main(void)
 // {
