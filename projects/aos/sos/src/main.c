@@ -72,7 +72,6 @@
  * A dummy starting syscall
  */
 #define SOS_SYSCALL0 0
-
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
 extern char _cpio_archive[];
@@ -131,11 +130,12 @@ static struct {
 
 struct network_console *network_console;
 
-struct network_console *network_console;
-
 struct handle_syscall_args {
     seL4_Word badge;
     int num_args;
+    seL4_Word data[120]; // todo: magic number
+    seL4_CPtr reply;
+    seL4_CPtr ep;
     bool* have_reply;
 };
 /**
@@ -148,10 +148,10 @@ seL4_MessageInfo_t handle_syscall(struct handle_syscall_args *arg)
 
     /* get the first word of the message, which in the SOS protocol is the number
      * of the SOS "syscall". */
-    seL4_Word syscall_number = seL4_GetMR(0);
+    seL4_Word syscall_number = arg->data[0];
 
     /* Set the reply flag */
-    arg->have_reply = true;
+    *(arg->have_reply) = true;
 
     /* Process system call */
     switch (syscall_number) {
@@ -164,15 +164,20 @@ seL4_MessageInfo_t handle_syscall(struct handle_syscall_args *arg)
 
         break;
     case 2:
-        ZF_LOGV("syscall: write!\n");
-        seL4_Word chr = seL4_GetMR(1);
+        ZF_LOGE("syscall: write!\n");
+        seL4_Word chr = arg->data[1];
         char byte_to_send[1] = {chr}; 
 
         network_console_send(network_console, byte_to_send, 1); 
         
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 1); // sends a random byte back, just to 
         seL4_SetMR(0, 0);
+        seL4_Send(arg->reply, reply_msg);
         break;
+    case 1:
+        // register a handler
+        // TODO: get the is_console bit, note that that is still a show stopper
+        // network_console_register_handler(network_console, send_data_to_thread_read);
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         ZF_LOGE("Unknown syscall %lu\n", syscall_number);
@@ -182,9 +187,14 @@ seL4_MessageInfo_t handle_syscall(struct handle_syscall_args *arg)
 
     return reply_msg;
 }
-void thread_read_main(void *arg) {
-    printf("hello im in thread read\n");
+void send_data_to_thread_read(struct network_console* network_console, char c) {
+    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+    // seL4_SetMR(0, 2); // setting the syscall number to be 2 since 1 is reserved for an unknown syscall
+    // seL4_SetMR(1, (seL4_Word) c);
+    // seL4_Call(SOS_IPC_EP_CAP, tag);
+    printf("char received: %c\n", c);
 }
+
 NORETURN void syscall_loop(seL4_CPtr ep)
 {
     seL4_CPtr reply;
@@ -201,7 +211,6 @@ NORETURN void syscall_loop(seL4_CPtr ep)
     while (1) {
         seL4_Word badge = 0;
         seL4_MessageInfo_t message;
-
         /* Reply (if there is a reply) and block on ep, waiting for an IPC
          * sent over ep, or a notification from our bound notification object */
         if (have_reply) {
@@ -209,6 +218,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         } else {
             message = seL4_Recv(ep, &badge, reply);
         }
+        printf("badge: %d\n", badge);
 
         /* Awake! We got a message - check the label and badge to
          * see what the message is about */
@@ -230,10 +240,14 @@ NORETURN void syscall_loop(seL4_CPtr ep)
 
             /* Create arguments for the handle_syscall function */
             struct handle_syscall_args *arg = malloc(sizeof(struct handle_syscall_args));
-            arg->badge = badge;
             arg->have_reply = &have_reply;
             arg->num_args = seL4_MessageInfo_get_length(message) - 1;
-
+            for (int i = 0; i < arg->num_args; ++i) {
+                arg->data[i] = seL4_GetMR(i);
+            }
+            arg->badge = badge;
+            arg->reply = reply;
+            arg->ep = ep;
             /* Spawn a thread to handle syscall */
             sos_thread_t* thread = thread_create(handle_syscall, arg, badge, true, seL4_MinPrio, ntfn, false);
         } else {
