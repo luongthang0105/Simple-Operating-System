@@ -42,6 +42,7 @@
 #include "utils.h"
 #include "threads.h"
 #include <sos/gen_config.h>
+#include <sos.h>
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
 #endif /* CONFIG_SOS_GDB_ENABLED */
@@ -106,6 +107,8 @@ static struct {
     seL4_CPtr stack;
 } user_process;
 
+struct network_console *network_console;
+
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
@@ -131,6 +134,15 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
         seL4_SetMR(0, 0);
 
         break;
+    case SYSCALL_SOS_WRITE:
+        seL4_Word chr = seL4_GetMR(1);
+        char byte_to_send[1] = {chr}; 
+
+        network_console_send(network_console, byte_to_send, 1); 
+        
+        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1); // sends a random byte back, just to 
+        seL4_SetMR(0, 0);
+
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         ZF_LOGE("Unknown syscall %lu\n", syscall_number);
@@ -614,6 +626,7 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* Initialise the network hardware. */
     printf("Network init\n");
     network_init(&cspace, timer_vaddr, ntfn);
+    network_console = network_console_init();
 
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */

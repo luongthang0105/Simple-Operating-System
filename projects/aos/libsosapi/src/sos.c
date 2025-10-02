@@ -82,11 +82,17 @@ int sos_read(int file, char *buf, size_t nbyte)
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    /* MILESTONE 0: implement this to use your syscall and
-     * writes to the network console!
-     * Writing to files will come in later milestones.
-     */
-    return sos_debug_print(buf, nbyte);
+    // sending data to SOS byte-by-byte via IPC
+    for (size_t i = 0; i < nbyte; ++i) {
+        seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+        seL4_SetMR(0, SYSCALL_SOS_WRITE); 
+        seL4_SetMR(1, buf[i]);
+        sel4_SetMR(2, is_console_opened); // let SOS knows we wants to write to console or not
+
+        seL4_Call(SOS_IPC_EP_CAP, tag);
+    }
+    return nbyte;
+
 }
 
 int sos_getdirent(int pos, char *name, size_t nbyte)
