@@ -2,6 +2,7 @@
     "files.associations": {
         "stdio.h": "c",
         "sel4.h": "c",
-        "sos.h": "c"
+        "sos.h": "c",
+        "sel4_zf_logif.h": "c"
     }
 }
