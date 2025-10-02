@@ -3,6 +3,10 @@
         "stdio.h": "c",
         "sel4.h": "c",
         "sos.h": "c",
-        "sel4_zf_logif.h": "c"
+        "sel4_zf_logif.h": "c",
+        "numeric": "c",
+        "stdint.h": "c",
+        "syscalls.h": "c",
+        "cstdio": "c"
     }
 }
