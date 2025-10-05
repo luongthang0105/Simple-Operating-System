@@ -119,6 +119,10 @@ struct handle_syscall_args {
     seL4_CPtr reply;
 };
 
+struct syscall_loop_args {
+    seL4_CPtr ep;
+};
+
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
@@ -166,9 +170,9 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
 
 NORETURN void syscall_loop(void* arg) // TODO: make it takes an argument to worker ep, instead of using the static worker_ep
 {
-    seL4_CPtr reply;
-    printf("xin chao\n");
-    
+    seL4_CPtr reply;    
+    seL4_CPtr ep = ((struct syscall_loop_args*)arg)->ep;
+
     /* Create reply object */
     ut_t *reply_ut = alloc_retype(&reply, seL4_ReplyObject, seL4_ReplyBits);
     if (reply_ut == NULL) {
@@ -184,9 +188,9 @@ NORETURN void syscall_loop(void* arg) // TODO: make it takes an argument to work
         /* Reply (if there is a reply) and block on ep, waiting for an IPC
          * sent over ep, or a notification from our bound notification object */
         if (have_reply) {
-            message = seL4_ReplyRecv(worker_ep, reply_msg, &badge, reply);
+            message = seL4_ReplyRecv(ep, reply_msg, &badge, reply);
         } else {
-            message = seL4_Recv(worker_ep, &badge, reply);
+            message = seL4_Recv(ep, &badge, reply);
         }
         /* Awake! We got a message - check the label and badge to
          * see what the message is about */
@@ -200,24 +204,6 @@ NORETURN void syscall_loop(void* arg) // TODO: make it takes an argument to work
              * message from console_test! */
             // printf("badge: %lu\n", badge);
             reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
-            
-            // // printf("receive a message\n");
-            // seL4_CPtr ntfn;
-            // ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
-            // ZF_LOGF_IF(!ut, "No memory for notification object");
-
-            // /* Create arguments for the handle_syscall function */
-            // struct handle_syscall_args *arg = malloc(sizeof(struct handle_syscall_args));
-            // arg->have_reply = &have_reply;
-            // arg->num_args = seL4_MessageInfo_get_length(message) - 1;
-            // for (int i = 0; i < arg->num_args; ++i) {
-            //     arg->data[i] = seL4_GetMR(i);
-            // }
-            // arg->badge = badge;
-            // arg->reply = reply;
-            // /* Spawn a thread to handle syscall */
-            // sos_thread_t* thread = thread_create(handle_syscall, arg, badge, true, seL4_MinPrio, ntfn, false);
-
         } else {
             /* some kind of fault */
             debug_print_fault(message, APP_NAME);
@@ -231,22 +217,6 @@ NORETURN void syscall_loop(void* arg) // TODO: make it takes an argument to work
     }
 }
 
-void create_process() {
-    /* Create an notification object */
-    seL4_CPtr thread_ntfn;
-    ut_t *ut;
-    ut = alloc_retype(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
-    ZF_LOGF_IF(!ut, "No memory for notification object");
-    /* Create an endpoint object */
-    seL4_CPtr thread_ep;
-    ut = alloc_retype(&thread_ep, seL4_EndpointObject, seL4_EndpointBits);
-    ZF_LOGF_IF(!ut, "No memory for endpoint");
-    worker_ep = thread_ep;
-
-    /* Spawn a thread to handle syscall */
-    sos_thread_t* thread = thread_create(syscall_loop, NULL, 101, true, seL4_MinPrio, thread_ntfn, false);
-    worker_thread = thread;
-}
 static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
 {
     mapped_stack[index] = val;
@@ -739,11 +709,17 @@ NORETURN void *main_continued(UNUSED void *arg)
     /*  Create a thread pool
         TODO: create 16 worker threads
     */
-
-    create_process();
     
-    /* Start the user application */
-    // seL4_DebugDumpScheduler();
+    ut_t *ut;
+    seL4_CPtr thread_ntfn;
+    ut = alloc_retype(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
+    ZF_LOGF_IF(!ut, "No memory for notification object");
+    
+    // /* Create an endpoint object */
+    seL4_CPtr thread_ep;
+    ut = alloc_retype(&thread_ep, seL4_EndpointObject, seL4_EndpointBits);
+    ZF_LOGF_IF(!ut, "No memory for endpoint");
+    worker_ep = thread_ep;
     
     printf("Start first process\n");
     bool success = start_first_process(APP_NAME, worker_ep);
@@ -751,15 +727,13 @@ NORETURN void *main_continued(UNUSED void *arg)
     
     printf("\nSOS entering syscall loop\n");
     
-    // syscall_loop(NULL);
-    // sos_thread_t* thread = spawn(syscall_loop, NULL, 1, true);
-    // spawn(print_stuff, NULL, 1, true);
-
-    // worker_thread = thread;
-    // seL4_DebugDumpScheduler();
-    // syscall_loop(NULL);
-    while(1);
+    struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+    worker_sys_loop_args->ep = worker_ep;
+    sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, 0, true, seL4_MinPrio, thread_ntfn, false);
     
+    struct syscall_loop_args *main_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+    main_sys_loop_args->ep = ipc_ep;
+    syscall_loop(main_sys_loop_args);
 }
 /*
  * Main entry point - called by crt.
