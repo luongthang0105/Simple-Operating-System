@@ -116,8 +116,10 @@ int sos_write(int file, const char *buf, size_t nbyte)
         seL4_SetMR(1, buf[i]);
         seL4_SetMR(2, file);
         // seL4_SetMR(3, ep);
+        seL4_DebugPutString("client: before send a char\n");
 
         seL4_Call(SOS_IPC_EP_CAP, tag);
+        seL4_DebugPutString("client: send a char\n");
     }
     return nbyte;
 

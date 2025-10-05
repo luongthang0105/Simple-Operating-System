@@ -84,6 +84,7 @@ int thread_resume(sos_thread_t *thread)
 /* trampoline code for newly started thread */
 static void thread_trampoline(sos_thread_t *thread, thread_main_f *function, void *arg, bool debugger_add)
 {
+    printf("===========THREAD TRAMPOLINE===========\n");
     sel4runtime_set_tls_base(thread->tls_base);
     seL4_SetIPCBuffer((seL4_IPCBuffer *) thread->ipc_buffer_vaddr);
     current_thread = thread;
@@ -150,6 +151,21 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
         ZF_LOGE("Failed to mint user ep");
         return NULL;
     }
+
+    
+    /* Create reply object */
+    // new_thread->reply = cspace_alloc_slot(&cspace);
+    // if (new_thread->reply == seL4_CapNull) {
+    //     ZF_LOGE("Failed to alloc reply object slot");
+    //     return NULL;
+    // }
+
+    // printf("reply in thread_create: %lu\n", reply);
+    // err = cspace_move(&cspace, new_thread->reply, &cspace, reply);
+    // if (err) {
+    //     ZF_LOGE("Failed to move reply object");
+    //     return NULL;
+    // }
 
     /* Create a new TCB object */
     new_thread->tcb_ut = alloc_retype(&new_thread->tcb, seL4_TCBObject, seL4_TCBBits);
@@ -266,10 +282,10 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
         .x2 = (seL4_Word) arg,
         .x3 = (seL4_Word) debugger_add,
     };
-    ZF_LOGD(resume ? "Starting new sos thread at %p\n"
+    ZF_LOGE(resume ? "Starting new sos thread at %p\n"
             : "Created new thread starting at %p\n", (void *) context.pc);
     fflush(NULL);
-    err = seL4_TCB_WriteRegisters(new_thread->tcb, resume, 0, 7, &context);
+    err = seL4_TCB_WriteRegisters(new_thread->tcb, resume, 0, sizeof(context)/sizeof(seL4_Word), &context);
     if (err != seL4_NoError) {
         ZF_LOGE("Failed to write registers");
         return NULL;

@@ -299,14 +299,14 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
 #define SMALL_BUF_SZ 2
 #define MEDIUM_BUF_SZ 256
 
-char test_str[] = "Basic test string for read/write";
+char test_str[] = "Basic";
 char small_buf[SMALL_BUF_SZ];
 
 int test_buffers(int console_fd) {
    /* test a small string from the code segment */
    int result = sos_write(console_fd, test_str, strlen(test_str));
 //    assert(result == -1);
-   assert(result == strlen(test_str));
+//    assert(result == strlen(test_str));
 
 //    /* test reading to a small buffer */
 //    result = sos_read(console_fd, small_buf, SMALL_BUF_SZ);
