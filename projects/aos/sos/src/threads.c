@@ -269,7 +269,7 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
         .x2 = (seL4_Word) arg,
         .x3 = (seL4_Word) debugger_add,
     };
-    ZF_LOGE(resume ? "Starting new sos thread at %p\n"
+    ZF_LOGD(resume ? "Starting new sos thread at %p\n"
             : "Created new thread starting at %p\n", (void *) context.pc);
     fflush(NULL);
     err = seL4_TCB_WriteRegisters(new_thread->tcb, resume, 0, sizeof(context)/sizeof(seL4_Word), &context);
