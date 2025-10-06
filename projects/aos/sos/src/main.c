@@ -42,6 +42,7 @@
 #include "utils.h"
 #include "threads.h"
 #include <sos/gen_config.h>
+#include <utils/sglib.h>
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
 #endif /* CONFIG_SOS_GDB_ENABLED */
@@ -69,9 +70,18 @@
 #define INITIAL_PROCESS_EXTRA_STACK_PAGES 4
 
 /*
- * A dummy starting syscall
+ * Syscall number
+ * TODO: create a shared header file between sos and sosapi to share the same syscall number
  */
-#define SOS_SYSCALL0 0
+#define SOS_SYSCALL_READ 1
+#define SOS_SYSCALL_WRITE 2
+
+/* Network console circular queue buffer, size = MAX_PAYLOAD_SIZE in networkconsole.c */
+#define DIM 1024
+static char nwcs_buf[DIM];
+static int i, j;
+static bool has_nwcs_reader = false; // for signalling when nwcs handler to call seL4_Signal
+
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
 extern char _cpio_archive[];
@@ -103,22 +113,21 @@ static struct {
 
     ut_t *stack_ut;
     seL4_CPtr stack;
-    sos_thread_t* thread;
 } user_process;
-
-struct network_console *network_console;
-static sos_thread_t *worker_thread;
-static seL4_CPtr worker_ep;
 
 struct syscall_loop_args {
     seL4_CPtr ep;
 };
 
+struct network_console *network_console;
+static sos_thread_t *worker_thread;
+static seL4_CPtr worker_ep;
+
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
  */
-seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply)
+seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply, seL4_CPtr ep)
 {
     seL4_MessageInfo_t reply_msg;
 
@@ -131,20 +140,25 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
 
     /* Process system call */
     switch (syscall_number) {
-    case SOS_SYSCALL0:
-        /* construct a reply message of length 1 */
-        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-        /* Set the first (and only) word in the message to 0 */
-        seL4_SetMR(0, 0);
-        break;
-    case 2:
+    case SOS_SYSCALL_WRITE:
+        ZF_LOGV("syscall write!\n");
         char byte_to_send[1] = { seL4_GetMR(1) };
         network_console_send(network_console, byte_to_send, 1); 
         break;
-    case 1:
-        // register a handler
-        // TODO: get the is_console bit, note that that is still a show stopper
-        // network_console_register_handler(network_console, send_data_to_thread_read);
+
+    case SOS_SYSCALL_READ:
+        ZF_LOGV("syscall read!\n");
+        if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
+            has_nwcs_reader = true;
+            seL4_Wait(worker_thread->ntfn, NULL);
+        }
+
+        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+        seL4_SetMR(0, SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j));
+        SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+        has_nwcs_reader = false;
+        break;
+
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         ZF_LOGE("Unknown syscall %lu\n", syscall_number);
@@ -153,6 +167,15 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     }
 
     return reply_msg;
+}
+
+void write_to_buf(struct network_console *network_console, char c) {
+    bool is_empty_before = SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j);
+    SGLIB_QUEUE_ADD(char, nwcs_buf, c, i, j, DIM);
+
+    if (is_empty_before && has_nwcs_reader) {
+        seL4_Signal(worker_thread->ntfn);
+    }
 }
 
 NORETURN void syscall_loop(void* arg)
@@ -189,7 +212,7 @@ NORETURN void syscall_loop(void* arg)
         } else if (label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from console_test! */
-            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
+            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply, ep);
         } else {
             /* some kind of fault */
             debug_print_fault(message, APP_NAME);
@@ -627,6 +650,11 @@ NORETURN void *main_continued(UNUSED void *arg)
     network_init(&cspace, timer_vaddr, ntfn);
     network_console = network_console_init();
 
+    // Initialize network console buffer
+    SGLIB_QUEUE_INIT(char, nwcs_buf, i, j);
+    network_console_register_handler(network_console, write_to_buf);
+
+
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
     seL4_Error err = debugger_init(&cspace, seL4_CapIRQControl, gdb_recv_ep);
@@ -713,6 +741,7 @@ NORETURN void *main_continued(UNUSED void *arg)
     struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
     worker_sys_loop_args->ep = worker_ep;
     sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, 0, true, seL4_MinPrio, thread_ntfn, false);
+    worker_thread = thread;
 
     /* SOS entering syscall loop */
     printf("\nSOS entering syscall loop\n");
