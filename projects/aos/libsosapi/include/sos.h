@@ -49,6 +49,8 @@ typedef int st_type_t;
 /* syscall numbers */
 #define SYSCALL_SOS_READ    1
 #define SYSCALL_SOS_WRITE   2
+#define SYSCALL_SOS_TIMESTAMP 3
+#define SYSCALL_SOS_USLEEP  4
 
 typedef struct {
     st_type_t st_type;    /* file type */
