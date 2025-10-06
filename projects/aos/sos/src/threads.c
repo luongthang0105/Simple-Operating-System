@@ -151,22 +151,7 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
         ZF_LOGE("Failed to mint user ep");
         return NULL;
     }
-
     
-    /* Create reply object */
-    // new_thread->reply = cspace_alloc_slot(&cspace);
-    // if (new_thread->reply == seL4_CapNull) {
-    //     ZF_LOGE("Failed to alloc reply object slot");
-    //     return NULL;
-    // }
-
-    // printf("reply in thread_create: %lu\n", reply);
-    // err = cspace_move(&cspace, new_thread->reply, &cspace, reply);
-    // if (err) {
-    //     ZF_LOGE("Failed to move reply object");
-    //     return NULL;
-    // }
-
     /* Create a new TCB object */
     new_thread->tcb_ut = alloc_retype(&new_thread->tcb, seL4_TCBObject, seL4_TCBBits);
     if (new_thread->tcb_ut == NULL) {
