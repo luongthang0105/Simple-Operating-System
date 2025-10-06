@@ -77,49 +77,36 @@ int sos_close(int file)
 int sos_read(int file, char *buf, size_t nbyte)
 {
     // check invalid file
-    if (!is_console_opened || !((console_mode  >> FM_READ) & 1)) {
+    if (!is_console_opened || !HAS_FM_READ(console_mode)) {
         return -1;
     }
-    // seL4_CPtr ep;
-    // ut_t *ut = alloc_retype(ep, seL4_EndpointObject, seL4_EndpointBits);
-    // ZF_LOGF_IF(!ut, "No memory for endpoint");
-
-    // send to main thread to invoke a worker thread
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
-    seL4_SetMR(0, SYSCALL_SOS_READ);
-    seL4_SetMR(1, file);
-    // seL4_SetMR(2, ep);
-
-    seL4_NBSend(SOS_IPC_EP_CAP, tag);
-    
+    int num_byte_read = 0;
     for (size_t i = 0; i < nbyte; ++i) {
-        seL4_Wait(SOS_IPC_EP_CAP, NULL);
+        seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+        seL4_SetMR(0, SYSCALL_SOS_READ); 
+        seL4_SetMR(1, file);
+        
+        seL4_Call(SOS_IPC_EP_CAP, tag);
         seL4_Word character = seL4_GetMR(0);
         buf[i] = character;
+        num_byte_read += 1;
+        if (character == '\n') {
+            break;
+        }
     }
-    
-    return nbyte;
+    return num_byte_read;
 }
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    if (file != CONSOLE_FD) return -1;
     if (!is_console_opened || !HAS_FM_WRITE(console_mode)) return -1;
-    // sending data to SOS byte-by-byte via IPC
-    // seL4_CPtr ep;
-    // ut_t *ut = alloc_retype(ep, seL4_EndpointObject, seL4_EndpointBits);
-    // ZF_LOGF_IF(!ut, "No memory for endpoint");
 
     for (size_t i = 0; i < nbyte; ++i) {
         seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
         seL4_SetMR(0, SYSCALL_SOS_WRITE); 
         seL4_SetMR(1, buf[i]);
         seL4_SetMR(2, file);
-        // seL4_SetMR(3, ep);
-        seL4_DebugPutString("client: before send a char\n");
-
         seL4_Call(SOS_IPC_EP_CAP, tag);
-        seL4_DebugPutString("client: send a char\n");
     }
     return nbyte;
 
