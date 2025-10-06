@@ -42,6 +42,7 @@
 #include "utils.h"
 #include "threads.h"
 #include <sos/gen_config.h>
+#include <utils/sglib.h>
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
 #endif /* CONFIG_SOS_GDB_ENABLED */
@@ -69,9 +70,17 @@
 #define INITIAL_PROCESS_EXTRA_STACK_PAGES 4
 
 /*
- * A dummy starting syscall
+ * Syscall number
+ * TODO: create a shared header file between sos and sosapi to share the same syscall number
  */
-#define SOS_SYSCALL0 0
+#define SOS_SYSCALL_READ 1
+#define SOS_SYSCALL_WRITE 2
+
+/* Network console circular queue buffer, size = MAX_PAYLOAD_SIZE in networkconsole.c */
+#define DIM 1024
+static char nwcs_buf[DIM];
+static int i, j;
+static bool has_nwcs_reader = false; // for signalling when nwcs handler to call seL4_Signal
 
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
@@ -86,28 +95,6 @@ cspace_t cspace;
 
 static seL4_CPtr sched_ctrl_start;
 static seL4_CPtr sched_ctrl_end;
-
-// static struct user_thread {
-//     ut_t *tcb_ut;
-//     seL4_CPtr tcb;
-
-//     seL4_CPtr user_ep;
-//     seL4_CPtr fault_ep;
-//     ut_t *ipc_buffer_ut;
-//     seL4_CPtr ipc_buffer;
-//     seL4_Word ipc_buffer_vaddr;
-
-//     ut_t *sched_context_ut;
-//     seL4_CPtr sched_context;
-
-//     ut_t *stack_ut;
-//     seL4_CPtr stack;
-//     seL4_Word badge;
-
-//     uintptr_t tls_base;
-
-//     struct user_thread* next_thread;
-// };
 
 /* the one process we start */
 static struct {
@@ -126,23 +113,21 @@ static struct {
 
     ut_t *stack_ut;
     seL4_CPtr stack;
-    sos_thread_t* thread;
 } user_process;
 
-struct network_console *network_console;
-
-struct network_console *network_console;
-
-struct handle_syscall_args {
-    seL4_Word badge;
-    int num_args;
-    bool* have_reply;
+struct syscall_loop_args {
+    seL4_CPtr ep;
 };
+
+struct network_console *network_console;
+static sos_thread_t *worker_thread;
+static seL4_CPtr worker_ep;
+
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
  */
-seL4_MessageInfo_t handle_syscall(struct handle_syscall_args *arg)
+seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply, seL4_CPtr ep)
 {
     seL4_MessageInfo_t reply_msg;
 
@@ -151,43 +136,52 @@ seL4_MessageInfo_t handle_syscall(struct handle_syscall_args *arg)
     seL4_Word syscall_number = seL4_GetMR(0);
 
     /* Set the reply flag */
-    arg->have_reply = true;
+    *have_reply = true;
 
     /* Process system call */
     switch (syscall_number) {
-    case SOS_SYSCALL0:
-        ZF_LOGE("syscall: thread example made syscall 0!\n");
-        /* construct a reply message of length 1 */
-        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-        /* Set the first (and only) word in the message to 0 */
-        seL4_SetMR(0, 0);
-
-        break;
-    case 2:
-        ZF_LOGV("syscall: write!\n");
-        seL4_Word chr = seL4_GetMR(1);
-        char byte_to_send[1] = {chr}; 
-
+    case SOS_SYSCALL_WRITE:
+        ZF_LOGV("syscall write!\n");
+        char byte_to_send[1] = { seL4_GetMR(1) };
         network_console_send(network_console, byte_to_send, 1); 
-        
-        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1); // sends a random byte back, just to 
-        seL4_SetMR(0, 0);
         break;
+
+    case SOS_SYSCALL_READ:
+        ZF_LOGV("syscall read!\n");
+        if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
+            has_nwcs_reader = true;
+            seL4_Wait(worker_thread->ntfn, NULL);
+        }
+
+        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+        seL4_SetMR(0, SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j));
+        SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+        has_nwcs_reader = false;
+        break;
+
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
         ZF_LOGE("Unknown syscall %lu\n", syscall_number);
         /* Don't reply to an unknown syscall */
-        arg->have_reply = false;
+        *have_reply = false;
     }
 
     return reply_msg;
 }
-void thread_read_main(void *arg) {
-    printf("hello im in thread read\n");
+
+void write_to_buf(struct network_console *network_console, char c) {
+    bool is_empty_before = SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j);
+    SGLIB_QUEUE_ADD(char, nwcs_buf, c, i, j, DIM);
+
+    if (is_empty_before && has_nwcs_reader) {
+        seL4_Signal(worker_thread->ntfn);
+    }
 }
-NORETURN void syscall_loop(seL4_CPtr ep)
+
+NORETURN void syscall_loop(void* arg)
 {
-    seL4_CPtr reply;
+    seL4_CPtr reply;    
+    seL4_CPtr ep = ((struct syscall_loop_args*)arg)->ep;
 
     /* Create reply object */
     ut_t *reply_ut = alloc_retype(&reply, seL4_ReplyObject, seL4_ReplyBits);
@@ -201,7 +195,6 @@ NORETURN void syscall_loop(seL4_CPtr ep)
     while (1) {
         seL4_Word badge = 0;
         seL4_MessageInfo_t message;
-
         /* Reply (if there is a reply) and block on ep, waiting for an IPC
          * sent over ep, or a notification from our bound notification object */
         if (have_reply) {
@@ -209,11 +202,9 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         } else {
             message = seL4_Recv(ep, &badge, reply);
         }
-
         /* Awake! We got a message - check the label and badge to
          * see what the message is about */
         seL4_Word label = seL4_MessageInfo_get_label(message);
-
         if (badge & IRQ_EP_BADGE) {
             /* It's a notification from our bound notification
              * object! */
@@ -221,21 +212,7 @@ NORETURN void syscall_loop(seL4_CPtr ep)
         } else if (label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from console_test! */
-            // reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
-
-            /* Create an notification object */
-            seL4_CPtr ntfn;
-            ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
-            ZF_LOGF_IF(!ut, "No memory for notification object");
-
-            /* Create arguments for the handle_syscall function */
-            struct handle_syscall_args *arg = malloc(sizeof(struct handle_syscall_args));
-            arg->badge = badge;
-            arg->have_reply = &have_reply;
-            arg->num_args = seL4_MessageInfo_get_length(message) - 1;
-
-            /* Spawn a thread to handle syscall */
-            sos_thread_t* thread = thread_create(handle_syscall, arg, badge, true, seL4_MinPrio, ntfn, false);
+            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply, ep);
         } else {
             /* some kind of fault */
             debug_print_fault(message, APP_NAME);
@@ -538,7 +515,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
         .pc = elf_getEntryPoint(&elf_file),
         .sp = sp,
     };
-    printf("Starting console_test at %p\n", (void *) context.pc);
+    printf("Starting %s at %p\n", APP_NAME, (void *) context.pc);
     err = seL4_TCB_WriteRegisters(user_process.tcb, 1, 0, 2, &context);
     ZF_LOGE_IF(err, "Failed to write registers");
     return err == seL4_NoError;
@@ -673,6 +650,11 @@ NORETURN void *main_continued(UNUSED void *arg)
     network_init(&cspace, timer_vaddr, ntfn);
     network_console = network_console_init();
 
+    // Initialize network console buffer
+    SGLIB_QUEUE_INIT(char, nwcs_buf, i, j);
+    network_console_register_handler(network_console, write_to_buf);
+
+
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
     seL4_Error err = debugger_init(&cspace, seL4_CapIRQControl, gdb_recv_ep);
@@ -735,13 +717,37 @@ NORETURN void *main_continued(UNUSED void *arg)
     // assert(register_timer(1, callback_example, NULL) == 0);
     // assert(remove_timer(timer_id1) == CLOCK_R_CNCL);
 
-    /* Start the user application */
+    /*  Create a thread pool. TODO: create 16 worker threads
+    */
+    
+    /* Create a notification object */
+    ut_t *ut;
+    seL4_CPtr thread_ntfn;
+    ut = alloc_retype(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
+    ZF_LOGF_IF(!ut, "No memory for notification object");
+    
+    /* Create an endpoint object */
+    seL4_CPtr thread_ep;
+    ut = alloc_retype(&thread_ep, seL4_EndpointObject, seL4_EndpointBits);
+    ZF_LOGF_IF(!ut, "No memory for endpoint");
+    worker_ep = thread_ep;
+    
+    /* Start user process */
     printf("Start first process\n");
-    bool success = start_first_process(APP_NAME, ipc_ep);
+    bool success = start_first_process(APP_NAME, worker_ep);
     ZF_LOGF_IF(!success, "Failed to start first process");
+    
+    /* Start the worker thread */
+    struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+    worker_sys_loop_args->ep = worker_ep;
+    sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, 0, true, seL4_MinPrio, thread_ntfn, false);
+    worker_thread = thread;
 
+    /* SOS entering syscall loop */
     printf("\nSOS entering syscall loop\n");
-    syscall_loop(ipc_ep);
+    struct syscall_loop_args *main_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+    main_sys_loop_args->ep = ipc_ep;
+    syscall_loop(main_sys_loop_args);
 }
 /*
  * Main entry point - called by crt.

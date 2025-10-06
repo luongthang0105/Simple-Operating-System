@@ -22,6 +22,7 @@ typedef struct {
     ut_t *tcb_ut;
     seL4_CPtr tcb;
 
+    seL4_CPtr ntfn;
     seL4_CPtr user_ep;
     seL4_CPtr fault_ep;
     ut_t *ipc_buffer_ut;

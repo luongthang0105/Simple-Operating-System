@@ -7,6 +7,7 @@
         "numeric": "c",
         "stdint.h": "c",
         "syscalls.h": "c",
-        "cstdio": "c"
+        "cstdio": "c",
+        "unistd.h": "c"
     }
 }

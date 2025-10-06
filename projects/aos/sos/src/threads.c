@@ -238,6 +238,9 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
         }
     }
 
+    /* Save the bound ntfn object to the thread */
+    new_thread->ntfn = bound_ntfn;
+    
     /* Provide a name for the thread -- Helpful for debugging */
     NAME_THREAD(new_thread->tcb, "second sos thread");
 
@@ -269,7 +272,7 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
     ZF_LOGD(resume ? "Starting new sos thread at %p\n"
             : "Created new thread starting at %p\n", (void *) context.pc);
     fflush(NULL);
-    err = seL4_TCB_WriteRegisters(new_thread->tcb, resume, 0, 7, &context);
+    err = seL4_TCB_WriteRegisters(new_thread->tcb, resume, 0, sizeof(context)/sizeof(seL4_Word), &context);
     if (err != seL4_NoError) {
         ZF_LOGE("Failed to write registers");
         return NULL;
