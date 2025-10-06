@@ -44,6 +44,7 @@
 #include <sos/gen_config.h>
 #include <utils/sglib.h>
 #include <sossharedapi/syscalls.h>
+// #include "syscall_handlers/syscall_handlers.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
 #endif /* CONFIG_SOS_GDB_ENABLED */
@@ -125,6 +126,46 @@ void timeout_callback(uint32_t id, void *data) {
     int thread_index = *(int*)data;
     seL4_Signal(worker_threads[thread_index]->ntfn);
 }
+
+void handler_sos_write(seL4_MessageInfo_t *reply_msg) {
+    ZF_LOGV("syscall: write!\n");
+    char byte_to_send[1] = { seL4_GetMR(1) };
+    network_console_send(network_console, byte_to_send, 1);
+    
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
+}
+
+void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
+    ZF_LOGV("syscall: read!\n");
+    if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
+        nwcs_reader = thread_index; // THREAD-SAFE because only allows 1 nwcs reader at a time
+        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    }
+    
+    /* send first char from buf back to client */
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_SetMR(0, SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j));
+    
+    SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+    
+    nwcs_reader = -1;
+}
+
+void handler_sos_timestamp(seL4_MessageInfo_t *reply_msg) {
+    ZF_LOGV("syscall: get timestamp!\n");
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_SetMR(0, get_time());
+}
+
+void handler_sos_usleep(seL4_MessageInfo_t *reply_msg, int thread_index) {
+    ZF_LOGV("syscall: usleep!\n");
+    int msec = seL4_GetMR(1);
+
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
+
+    register_timer(msec, timeout_callback, &thread_index);
+    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+}
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
@@ -141,36 +182,19 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     *have_reply = true;
 
     /* Process system call */
+    /* Ideally, put all of these into syscall_handlers.c (in the future :P)*/
     switch (syscall_number) {
     case SYSCALL_SOS_WRITE:
-        ZF_LOGV("syscall write!\n");
-        char byte_to_send[1] = { seL4_GetMR(1) };
-        network_console_send(network_console, byte_to_send, 1); 
+        handler_sos_write(&reply_msg);
         break;
-
     case SYSCALL_SOS_READ:
-        ZF_LOGV("syscall read!\n");
-        if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
-            nwcs_reader = thread_index; // THREAD-SAFE because only allows 1 nwcs reader at a time
-            seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
-        }
-        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-        seL4_SetMR(0, SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j));
-        SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
-        nwcs_reader = -1;
+        handler_sos_read(&reply_msg, thread_index);
         break;
     case SYSCALL_SOS_TIMESTAMP:
-        ZF_LOGV("syscall get timestamp!\n");
-        reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-        seL4_SetMR(0, get_time());
+        handler_sos_timestamp(&reply_msg);
         break;
     case SYSCALL_SOS_USLEEP:
-        ZF_LOGV("syscall usleep!\n");
-        int msec = seL4_GetMR(1);
-        reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-
-        register_timer(msec, timeout_callback, &thread_index);
-        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+        handler_sos_usleep(&reply_msg, thread_index);   
         break;
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);

@@ -9,6 +9,7 @@
         "syscalls.h": "c",
         "cstdio": "c",
         "unistd.h": "c",
-        "utils.h": "c"
+        "utils.h": "c",
+        "networkconsole.h": "c"
     }
 }
