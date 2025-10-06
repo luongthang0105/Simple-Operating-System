@@ -127,8 +127,10 @@ struct network_console *network_console;
 #define MAX_WORKER_THREADS  1
 static sos_thread_t* worker_threads[MAX_WORKER_THREADS];
 
-void wake_up_worker_thread() {
-    seL4_Signal(worker_thread->ntfn);
+/* Callback for timer registered by sleep system call */
+void timeout_callback(uint32_t id, void *data) {
+    int thread_index = *(int*)data;
+    seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 /**
  * Deals with a syscall and sets the message registers before returning the
@@ -173,8 +175,9 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
         ZF_LOGV("syscall usleep!\n");
         int msec = seL4_GetMR(1);
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-        register_timer(msec, wake_up_worker_thread, NULL);
-        seL4_Wait(worker_thread->ntfn, NULL);
+
+        register_timer(msec, timeout_callback, &thread_index);
+        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
         break;
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
