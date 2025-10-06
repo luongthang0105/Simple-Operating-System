@@ -76,11 +76,11 @@
 #define SOS_SYSCALL_READ 1
 #define SOS_SYSCALL_WRITE 2
 
-/* Network console circular queue buffer, size = MAX_PAYLOAD_SIZE in networkconsole.c */
+/* Network console (nwcs) circular queue buffer, size = MAX_PAYLOAD_SIZE in networkconsole.c */
 #define DIM 1024
 static char nwcs_buf[DIM];
 static int i, j;
-static bool has_nwcs_reader = false; // for signalling when nwcs handler to call seL4_Signal
+static int nwcs_reader = -1; // thread index that is currently the nwcs reader
 
 /* The linker will link this symbol to the start address  *
  * of an archive of attached applications.                */
@@ -117,20 +117,19 @@ static struct {
 
 struct syscall_loop_args {
     seL4_CPtr ep;
+    int thread_index;
 };
 
 struct network_console *network_console;
-static sos_thread_t *worker_thread;
-static seL4_CPtr worker_ep;
 
-#define MAX_WORKER_THREADS  16
+#define MAX_WORKER_THREADS  1
 static sos_thread_t* worker_threads[MAX_WORKER_THREADS];
 
 /**
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
  */
-seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply, seL4_CPtr ep)
+seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply, seL4_CPtr ep, int thread_index)
 {
     seL4_MessageInfo_t reply_msg;
 
@@ -152,14 +151,14 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     case SOS_SYSCALL_READ:
         ZF_LOGV("syscall read!\n");
         if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
-            has_nwcs_reader = true;
-            seL4_Wait(worker_thread->ntfn, NULL);
+            nwcs_reader = thread_index; // THREAD-SAFE because only allows 1 nwcs reader at a time
+            seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
         }
 
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
         seL4_SetMR(0, SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j));
         SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
-        has_nwcs_reader = false;
+        nwcs_reader = -1;
         break;
 
     default:
@@ -176,8 +175,8 @@ void write_to_buf(struct network_console *network_console, char c) {
     bool is_empty_before = SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j);
     SGLIB_QUEUE_ADD(char, nwcs_buf, c, i, j, DIM);
 
-    if (is_empty_before && has_nwcs_reader) {
-        seL4_Signal(worker_thread->ntfn);
+    if (is_empty_before && nwcs_reader != -1) {
+        seL4_Signal(worker_threads[nwcs_reader]->ntfn);
     }
 }
 
@@ -185,6 +184,7 @@ NORETURN void syscall_loop(void* arg)
 {
     seL4_CPtr reply;    
     seL4_CPtr ep = ((struct syscall_loop_args*)arg)->ep;
+    int thread_index = ((struct syscall_loop_args*)arg)->thread_index;
 
     /* Create reply object */
     ut_t *reply_ut = alloc_retype(&reply, seL4_ReplyObject, seL4_ReplyBits);
@@ -215,7 +215,7 @@ NORETURN void syscall_loop(void* arg)
         } else if (label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from console_test! */
-            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply, ep);
+            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply, ep, thread_index);
         } else {
             /* some kind of fault */
             debug_print_fault(message, APP_NAME);
@@ -724,7 +724,7 @@ NORETURN void *main_continued(UNUSED void *arg)
     */
     
     /* Create a notification object */
-    for (size_t i = 1; i <= MAX_WORKER_THREADS; ++i) {
+    for (size_t i = 0; i < MAX_WORKER_THREADS; ++i) {
         ut_t *ut;
         seL4_CPtr thread_ntfn;
         ut = alloc_retype(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
@@ -732,10 +732,11 @@ NORETURN void *main_continued(UNUSED void *arg)
         
         /* Start the worker thread */
         struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
-        sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, 0, false, seL4_MinPrio, thread_ntfn, false);
+        sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, i + 1, false, seL4_MinPrio, thread_ntfn, false);
         
         // worker thread IPC EP is created within 
         worker_sys_loop_args->ep = thread->ipc_ep;
+        worker_sys_loop_args->thread_index = i;
         thread_resume(thread);
 
         worker_threads[i] = thread;
