@@ -324,14 +324,14 @@ int test_buffers(int console_fd) {
     result = sos_write(console_fd, &stack_buf, MEDIUM_BUF_SZ);
     assert(result == MEDIUM_BUF_SZ);
 
-// //    /* try sleeping */
-// //    for (int i = 0; i < 5; i++) {
-// //        time_t prev_seconds = time(NULL);
-// //        second_sleep(1);
-// //        time_t next_seconds = time(NULL);
-// //        assert(next_seconds > prev_seconds);
-// //        printf("Tick\n");
-// //    }
+    /* try sleeping */
+    for (int i = 0; i < 5; i++) {
+        time_t prev_seconds = time(NULL);
+        sleep(1);
+        time_t next_seconds = time(NULL);
+        assert(next_seconds > prev_seconds);
+        printf("Tick\n");
+    }
 }
 
 int main(void) {

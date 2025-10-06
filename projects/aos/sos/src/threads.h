@@ -23,7 +23,10 @@ typedef struct {
     seL4_CPtr tcb;
 
     seL4_CPtr ntfn;
-    seL4_CPtr user_ep;
+
+    ut_t *ipc_ep_ut;
+    seL4_CPtr ipc_ep;   // endpoint for other threads to communicate with this thread via IPC
+    seL4_CPtr user_ep;  // endpoint to communicate with SOS main thread, with a badge on it
     seL4_CPtr fault_ep;
     ut_t *ipc_buffer_ut;
     seL4_CPtr ipc_buffer;

@@ -151,6 +151,14 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
         return NULL;
     }
 
+    /* The thread also needs to have an endpoint for other threads to communicate with, via IPC */
+    new_thread->ipc_ep_ut = alloc_retype(&new_thread->ipc_ep,
+                                             seL4_EndpointObject, seL4_EndpointBits);
+    if (new_thread->ipc_ep_ut == NULL) {
+        ZF_LOGE("Failed to alloc ipc ep ut");
+        return NULL;
+    }
+
     /* Create a new TCB object */
     new_thread->tcb_ut = alloc_retype(&new_thread->tcb, seL4_TCBObject, seL4_TCBBits);
     if (new_thread->tcb_ut == NULL) {
