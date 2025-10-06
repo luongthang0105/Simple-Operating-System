@@ -18,8 +18,13 @@
 #include <sel4/sel4.h>
 #include <fcntl.h>
 
-static bool is_console_opened = false;
-static fmode_t console_mode = 0;
+#define MAX_NUM_FILES 10
+struct file_status {
+    fmode_t mode;
+    bool is_opened;
+}
+/* file descriptor number is used to index to the array */
+static file_status[MAX_NUM_FILES];
 
 static size_t sos_debug_print(const void *vData, size_t count)
 {
@@ -53,14 +58,15 @@ int sos_open(const char *path, fmode_t mode)
     }   
 
     if (strcmp(path, "console") == 0) {
-        if (is_console_opened) {
-            if (HAS_FM_READ(console_mode) && HAS_FM_READ(mode)) {
+        struct file_status *console = &file_status[CONSOLE_FD];
+        if (console->is_opened) {
+            if (HAS_FM_READ(console->mode) && HAS_FM_READ(mode)) {
                 return -1; // Only one reader at a time!
             }
         } 
 
-        is_console_opened = true;
-        console_mode |= mode;
+        console->is_opened = true;
+        console->mode |= mode;
 
         return CONSOLE_FD;
     }
@@ -75,9 +81,11 @@ int sos_close(int file)
 }
 
 int sos_read(int file, char *buf, size_t nbyte)
-{
+{   
+    struct file_status *cur_file = &file_status[file];
+
     // check invalid file
-    if (!is_console_opened || !HAS_FM_READ(console_mode)) {
+    if (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_READ(cur_file->mode)) {
         return -1;
     }
     int num_byte_read = 0;
@@ -99,7 +107,13 @@ int sos_read(int file, char *buf, size_t nbyte)
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    if (!is_console_opened || !HAS_FM_WRITE(console_mode)) return -1;
+    struct file_status *cur_file = &file_status[file];
+
+    /* currently there's no a proper way to initialise the file status of files 
+     * with descriptors 0, 1, 2 (stdin, stdout, stderr), so to enable printf, we only
+     * check the valid file status for other files > 2
+    */
+    if (file > 2 && (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_WRITE(cur_file->mode))) return -1;
 
     for (size_t i = 0; i < nbyte; ++i) {
         seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
