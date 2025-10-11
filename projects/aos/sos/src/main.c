@@ -43,6 +43,7 @@
 #include "threads.h"
 #include <sos/gen_config.h>
 #include <utils/sglib.h>
+#include <utils/list.h>
 #include <sossharedapi/syscalls.h>
 // #include "syscall_handlers/syscall_handlers.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
@@ -109,6 +110,9 @@ static struct {
 
     ut_t *stack_ut;
     seL4_CPtr stack;
+
+    list_t *paging_objects;
+    list_t *frame_refs;
 } user_process;
 
 struct syscall_loop_args {
@@ -296,8 +300,8 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     }
 
     /* Map in the stack frame for the user app */
-    seL4_Error err = map_frame(cspace, user_process.stack, user_process.vspace, stack_bottom,
-                               seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    seL4_Error err = sos_map_frame(cspace, NULL_FRAME, user_process.stack, user_process.vspace, stack_bottom,
+                               seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
     if (err != 0) {
         ZF_LOGE("Unable to map stack for user app");
         return 0;
@@ -401,8 +405,8 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
 
-        err = map_frame(cspace, frame_cptr, user_process.vspace, stack_bottom,
-                        seL4_AllRights, seL4_ARM_Default_VMAttributes);
+        err = sos_map_frame(cspace, frame, frame_cptr, user_process.vspace, stack_bottom,
+                        seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
         if (err != 0) {
             cspace_delete(cspace, frame_cptr);
             cspace_free_slot(cspace, frame_cptr);
@@ -451,6 +455,14 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
         ZF_LOGE("Failed to alloc ipc buffer ut");
         return false;
     }
+
+    /* Initialise a linked list of paging objects */
+    user_process.paging_objects = malloc(sizeof(list_t));
+    list_init(user_process.paging_objects);
+
+    /* Initialise a linked list of frame refs */
+    user_process.frame_refs = malloc(sizeof(list_t));
+    list_init(user_process.frame_refs);
 
     /* allocate a new slot in the target cspace which we will mint a badged endpoint cap into --
      * the badge is used to identify the process, which will come in handy when you have multiple
@@ -541,8 +553,8 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
 
     /* Map in the IPC buffer for the thread */
-    err = map_frame(&cspace, user_process.ipc_buffer, user_process.vspace, PROCESS_IPC_BUFFER,
-                    seL4_AllRights, seL4_ARM_Default_VMAttributes);
+    err = sos_map_frame(&cspace, NULL_FRAME, user_process.ipc_buffer, user_process.vspace, PROCESS_IPC_BUFFER,
+                    seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
     if (err != 0) {
         ZF_LOGE("Unable to map IPC buffer for user app");
         return false;
@@ -623,30 +635,6 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_ppoll, sys_ppoll);
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
 }
-void callback_example(uint32_t id, void *data)
-{
-    printf("callback function triggered: %s\n", data);
-}
-
-void *callback_periodic_demo(uint32_t id, void *data)
-{
-    printf("Get time timer %s: %lu\n", data, get_time());
-    register_timer(100000, callback_periodic_demo, data);
-}
-
-void callback_every_x_secs(uint32_t id, void *data)
-{
-    int x = *((int*)data);
-    printf("Periodic timer every %d secs, time = %lu\n", x, get_time());
-    register_timer(x * 1000000, callback_every_x_secs, data);
-}
-
-void callback_every_x_microsecs(uint32_t id, void *data)
-{
-    int x = *((int*)data);
-    printf("Periodic timer every %d microsecs, time = %lu\n", x, get_time());
-    register_timer(x, callback_every_x_microsecs, data);
-}
 
 NORETURN void *main_continued(UNUSED void *arg)
 {
@@ -714,52 +702,9 @@ NORETURN void *main_continued(UNUSED void *arg)
     ZF_LOGF_IF(init_irq_err != 0, "Failed to initialise IRQ");
     seL4_IRQHandler_Ack(irq_handler);
 
-    /* Periodic timer tests */
-    // int convert_to_ms = 1000000;
-    // int timer_1_freq = 2;
-    // uint32_t timer_id = register_timer(timer_1_freq * convert_to_ms, callback_every_x_secs, &timer_1_freq);
-    
-    // int timer_2_freq = 1;
-    // uint32_t timer_id2 = register_timer(timer_2_freq * convert_to_ms, callback_every_x_secs, &timer_2_freq);
-    
-    // int timer_3_freq = 3;
-    // register_timer(timer_3_freq * convert_to_ms, callback_every_x_secs, &timer_3_freq);
-    
-    /* Oneshot timer tests*/
-    // char data1[] = "hi 1";
-    // uint32_t timer_id = register_timer(5000000, callback_example, data1);
-    
-    // char data2[] = "hi 2";
-    // uint32_t timer_id2 = register_timer(3000000, callback_example, data2);
-    
-    // char data3[] = "hi 3";
-    // register_timer(1500000, callback_example, data3);
-
-    // very fast timer
-    // int timer_3_freq = 100000;
-    // register_timer(timer_3_freq, callback_every_x_microsecs, &timer_3_freq);
-
-    // DEMO TIMERS
-    // char timer1[] = "1";
-    // uint32_t timer_id1 = register_timer(100000, callback_periodic_demo, timer1);
-    
-    // char timer2[] = "2";
-    // uint32_t timer_id2 = register_timer(100000, callback_periodic_demo, timer2);
-
-    // // Test remove_timer
-    // assert(remove_timer(timer_id2) == CLOCK_R_OK);
-    // assert(remove_timer(123456) == CLOCK_R_FAIL); // non-exist timer id
-
-    // // Test stop timer
-    // stop_timer();
-    // assert(register_timer(1, callback_example, NULL) == 0);
-    // assert(remove_timer(timer_id1) == CLOCK_R_CNCL);
-
-    /*  Create a thread pool. TODO: create 16 worker threads
-    */
-    
-    /* Create a notification object */
+    /*  Create a thread pool */
     for (size_t i = 0; i < MAX_WORKER_THREADS; ++i) {
+        /* Create a notification object */
         ut_t *ut;
         seL4_CPtr thread_ntfn;
         ut = alloc_retype(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);

@@ -15,7 +15,8 @@
 #include "mapping.h"
 #include "ut.h"
 #include "vmem_layout.h"
-
+#include <utils/list.h>
+#include "frame_table.h"
 /**
  * Retypes and maps a page table into the root servers page global directory
  * @param cspace that the cptrs refer to
@@ -72,7 +73,64 @@ static seL4_Error retype_map_pud(cspace_t *cspace, seL4_CPtr vspace, seL4_Word v
     }
     return seL4_ARM_PageUpperDirectory_Map(empty, vspace, vaddr, seL4_ARM_Default_VMAttributes);
 }
+static seL4_Error sos_map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
+                                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr,
+                                     seL4_CPtr *free_slots, seL4_Word *used, list_t *paging_objects)
+{
+    /* Attempt the mapping */
+    seL4_Error err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
+    for (size_t i = 0; i < MAPPING_SLOTS && err == seL4_FailedLookup; i++) {
+        /* save this so nothing else trashes the message register value */
+        seL4_Word failed = seL4_MappingFailedLookupLevel();
 
+        /* Assume the error was because we are missing a paging structure */
+        ut_t *ut = ut_alloc_4k_untyped(NULL);
+        if (ut == NULL) {
+            ZF_LOGE("Out of 4k untyped");
+            return -1;
+        }
+
+        /* figure out which cptr to use to retype into*/
+        seL4_CPtr slot;
+        if (used != NULL) {
+            slot = free_slots[i];
+            *used |= BIT(i);
+        } else {
+            slot = cspace_alloc_slot(cspace);
+        }
+
+        if (slot == seL4_CapNull) {
+            ZF_LOGE("No cptr to alloc paging structure");
+            return -1;
+        }
+
+        switch (failed) {
+        case SEL4_MAPPING_LOOKUP_NO_PT:
+            err = retype_map_pt(cspace, vspace, vaddr, ut->cap, slot);
+            break;
+        case SEL4_MAPPING_LOOKUP_NO_PD:
+            err = retype_map_pd(cspace, vspace, vaddr, ut->cap, slot);
+            break;
+
+        case SEL4_MAPPING_LOOKUP_NO_PUD:
+            err = retype_map_pud(cspace, vspace, vaddr, ut->cap, slot);
+            break;
+        }
+
+        if (!err) {
+            /* Try the mapping again */
+            err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
+
+            /* Record the paging object within the process itself */
+            struct paging_object *paging_object = malloc(sizeof(struct paging_object));
+            paging_object->ut = ut;
+            paging_object->slot = slot;
+            list_append(paging_objects, paging_object);
+        }
+    }
+
+    return err;
+}
 static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
                                  seL4_CapRights_t rights, seL4_ARM_VMAttributes attr,
                                  seL4_CPtr *free_slots, seL4_Word *used)
@@ -143,7 +201,17 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
     return map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL);
 }
 
-
+seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
+                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs)
+{
+    seL4_Error err = sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, paging_objects);
+    if (!err) {
+        struct frame_ref_object *frame_ref_object = malloc(sizeof(struct frame_ref_object));
+        frame_ref_object->frame_ref = frame_ref;
+        list_append(frame_refs, frame_ref_object);
+    }
+    return err;
+}
 static uintptr_t device_virt = SOS_DEVICE_START;
 
 void *sos_map_device(cspace_t *cspace, uintptr_t addr, size_t size)

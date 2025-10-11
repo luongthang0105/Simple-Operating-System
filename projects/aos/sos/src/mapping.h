@@ -14,6 +14,18 @@
 #include <stdbool.h>
 #include <sel4/sel4.h>
 #include <cspace/cspace.h>
+#include "ut.h"
+
+struct paging_object
+{
+    ut_t *ut;
+    seL4_CPtr slot;
+};
+
+struct frame_ref_object
+{
+    frame_ref_t frame_ref;
+};
 
 /**
  * Maps a page.
@@ -46,7 +58,6 @@ seL4_Error map_frame_cspace(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vsp
                             seL4_CapRights_t rights, seL4_ARM_VMAttributes attr,
                             seL4_CPtr free_slots[MAPPING_SLOTS], seL4_Word *used);
 
-
 /* Maps a page, allocating intermediate structures and cslots with the cspace provided.
  *
  * If you *know* you can map the vaddr without allocating any other paging structures, or that it is
@@ -69,6 +80,8 @@ seL4_Error map_frame_cspace(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vsp
 seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
                      seL4_ARM_VMAttributes attr);
 
+seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
+                         seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs);
 /*
  * Map a device and return the virtual address it is mapped to.
  *
