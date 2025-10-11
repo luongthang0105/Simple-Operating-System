@@ -15,6 +15,7 @@
 #include <sel4/sel4.h>
 #include <cspace/cspace.h>
 #include "ut.h"
+#include "frame_table.h"
 
 struct paging_object
 {
