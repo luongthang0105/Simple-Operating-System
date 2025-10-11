@@ -635,30 +635,6 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_ppoll, sys_ppoll);
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
 }
-void callback_example(uint32_t id, void *data)
-{
-    printf("callback function triggered: %s\n", data);
-}
-
-void *callback_periodic_demo(uint32_t id, void *data)
-{
-    printf("Get time timer %s: %lu\n", data, get_time());
-    register_timer(100000, callback_periodic_demo, data);
-}
-
-void callback_every_x_secs(uint32_t id, void *data)
-{
-    int x = *((int*)data);
-    printf("Periodic timer every %d secs, time = %lu\n", x, get_time());
-    register_timer(x * 1000000, callback_every_x_secs, data);
-}
-
-void callback_every_x_microsecs(uint32_t id, void *data)
-{
-    int x = *((int*)data);
-    printf("Periodic timer every %d microsecs, time = %lu\n", x, get_time());
-    register_timer(x, callback_every_x_microsecs, data);
-}
 
 NORETURN void *main_continued(UNUSED void *arg)
 {
