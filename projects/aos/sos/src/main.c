@@ -112,6 +112,7 @@ static struct {
     seL4_CPtr stack;
 
     list_t *paging_objects;
+    list_t *frame_refs;
 } user_process;
 
 struct syscall_loop_args {
@@ -299,8 +300,8 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     }
 
     /* Map in the stack frame for the user app */
-    seL4_Error err = sos_map_frame(cspace, user_process.stack, user_process.vspace, stack_bottom,
-                               seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects);
+    seL4_Error err = sos_map_frame(cspace, NULL_FRAME, user_process.stack, user_process.vspace, stack_bottom,
+                               seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
     if (err != 0) {
         ZF_LOGE("Unable to map stack for user app");
         return 0;
@@ -404,8 +405,8 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
 
-        err = sos_map_frame(cspace, frame_cptr, user_process.vspace, stack_bottom,
-                        seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects);
+        err = sos_map_frame(cspace, frame, frame_cptr, user_process.vspace, stack_bottom,
+                        seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
         if (err != 0) {
             cspace_delete(cspace, frame_cptr);
             cspace_free_slot(cspace, frame_cptr);
@@ -458,6 +459,10 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     /* Initialise a linked list of paging objects */
     user_process.paging_objects = malloc(sizeof(list_t));
     list_init(user_process.paging_objects);
+
+    /* Initialise a linked list of frame refs */
+    user_process.frame_refs = malloc(sizeof(list_t));
+    list_init(user_process.frame_refs);
 
     /* allocate a new slot in the target cspace which we will mint a badged endpoint cap into --
      * the badge is used to identify the process, which will come in handy when you have multiple
@@ -548,8 +553,8 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
 
     /* Map in the IPC buffer for the thread */
-    err = sos_map_frame(&cspace, user_process.ipc_buffer, user_process.vspace, PROCESS_IPC_BUFFER,
-                    seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects);
+    err = sos_map_frame(&cspace, NULL_FRAME, user_process.ipc_buffer, user_process.vspace, PROCESS_IPC_BUFFER,
+                    seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
     if (err != 0) {
         ZF_LOGE("Unable to map IPC buffer for user app");
         return false;

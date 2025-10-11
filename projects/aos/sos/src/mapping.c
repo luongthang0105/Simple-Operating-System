@@ -16,7 +16,7 @@
 #include "ut.h"
 #include "vmem_layout.h"
 #include <utils/list.h>
-
+#include "frame_table.h"
 /**
  * Retypes and maps a page table into the root servers page global directory
  * @param cspace that the cptrs refer to
@@ -201,10 +201,16 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
     return map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL);
 }
 
-seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
-                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, list_t *paging_objects)
+seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
+                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs)
 {
-    return sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, paging_objects);
+    seL4_Error err = sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, paging_objects);
+    if (!err) {
+        struct frame_ref_object *frame_ref_object = malloc(sizeof(struct frame_ref_object));
+        frame_ref_object->frame_ref = frame_ref;
+        list_append(frame_refs, frame_ref_object);
+    }
+    return err;
 }
 static uintptr_t device_virt = SOS_DEVICE_START;
 

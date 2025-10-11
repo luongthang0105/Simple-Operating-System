@@ -16,10 +16,15 @@
 #include <cspace/cspace.h>
 #include "ut.h"
 
-static struct paging_object
+struct paging_object
 {
     ut_t *ut;
     seL4_CPtr slot;
+};
+
+struct frame_ref_object
+{
+    frame_ref_t frame_ref;
 };
 
 /**
@@ -75,8 +80,8 @@ seL4_Error map_frame_cspace(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vsp
 seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
                      seL4_ARM_VMAttributes attr);
 
-seL4_Error sos_map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
-                         seL4_ARM_VMAttributes attr, list_t *paging_objects);
+seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
+                         seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs);
 /*
  * Map a device and return the virtual address it is mapped to.
  *
