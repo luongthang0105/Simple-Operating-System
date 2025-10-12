@@ -10,338 +10,393 @@
  * @TAG(DATA61_GPL)
  */
 /* Simple shell to run on SOS */
+#include <utils/page.h>
 
-#include <assert.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <inttypes.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <time.h>
-#include <sys/time.h>
-#include <utils/time.h>
-#include <syscalls.h>
-/* Your OS header file */
-#include <sos.h>
+#define NBLOCKS 9
+#define NPAGES_PER_BLOCK 28
+#define TEST_ADDRESS 0x8000000000
 
-#include "benchmark.h"
-
-#define BUF_SIZ    6144
-#define MAX_ARGS   32
-
-static int in;
-static sos_stat_t sbuf;
-
-static void prstat(const char *name)
+/* called from pt_test */
+static void
+do_pt_test(char **buf)
 {
-    /* print out stat buf */
-    printf("%c%c%c%c 0x%06x 0x%lx 0x%06lx %s\n",
-           sbuf.st_type == ST_SPECIAL ? 's' : '-',
-           sbuf.st_fmode & FM_READ ? 'r' : '-',
-           sbuf.st_fmode & FM_WRITE ? 'w' : '-',
-           sbuf.st_fmode & FM_EXEC ? 'x' : '-', sbuf.st_size, sbuf.st_ctime,
-           sbuf.st_atime, name);
-}
+    int i;
 
-static int cat(int argc, char **argv)
-{
-    int fd;
-    char buf[BUF_SIZ];
-    int num_read, stdout_fd, num_written = 0;
-
-
-    if (argc != 2) {
-        printf("Usage: cat filename\n");
-        return 1;
-    }
-
-    printf("<%s>\n", argv[1]);
-
-    fd = open(argv[1], O_RDONLY);
-    stdout_fd = open("console", O_WRONLY);
-
-    assert(fd >= 0);
-
-    while ((num_read = read(fd, buf, BUF_SIZ)) > 0) {
-        num_written = write(stdout_fd, buf, num_read);
-    }
-
-    close(stdout_fd);
-    close(fd);
-
-    if (num_read == -1 || num_written == -1) {
-        printf("error on write\n");
-        return 1;
-    }
-
-    return 0;
-}
-
-static int cp(int argc, char **argv)
-{
-    int fd, fd_out;
-    char *file1, *file2;
-    char buf[BUF_SIZ];
-    int num_read, num_written = 0;
-
-    if (argc != 3) {
-        printf("Usage: cp from to\n");
-        return 1;
-    }
-
-    file1 = argv[1];
-    file2 = argv[2];
-
-    fd = open(file1, O_RDONLY);
-    fd_out = open(file2, O_WRONLY);
-
-    assert(fd >= 0);
-
-    while ((num_read = read(fd, buf, BUF_SIZ)) > 0) {
-        num_written = write(fd_out, buf, num_read);
-    }
-
-    close(fd_out);
-    close(fd);
-
-    if (num_read == -1 || num_written == -1) {
-        printf("error on cp\n");
-        return 1;
-    }
-
-    return 0;
-}
-
-#define MAX_PROCESSES 10
-
-static int ps(int argc, char **argv)
-{
-    sos_process_t *process;
-    int i, processes;
-
-    process = malloc(MAX_PROCESSES * sizeof(*process));
-
-    if (process == NULL) {
-        printf("%s: out of memory\n", argv[0]);
-        return 1;
-    }
-
-    processes = sos_process_status(process, MAX_PROCESSES);
-    
-    printf("TID SIZE   STIME   COMMAND\n");
-
-    for (i = 0; i < processes; i++) {
-        printf("%3d %4d %7d %9s\n", process[i].pid, process[i].size,
-               process[i].stime, process[i].command);
-    }
-
-    free(process);
-
-    return 0;
-}
-
-static int exec(int argc, char **argv)
-{
-    pid_t pid;
-    int r;
-    int bg = 0;
-
-    if (argc < 2 || (argc > 2 && argv[2][0] != '&')) {
-        printf("Usage: exec filename [&]\n");
-        return 1;
-    }
-
-    if ((argc > 2) && (argv[2][0] == '&')) {
-        bg = 1;
-    }
-
-    if (bg == 0) {
-        r = close(in);
-        assert(r == 0);
-    }
-
-    pid = sos_process_create(argv[1]);
-    if (pid >= 0) {
-        printf("Child pid=%d\n", pid);
-        if (bg == 0) {
-            sos_process_wait(pid);
+    /* set */
+    for (int b = 0; b < NBLOCKS; b++) {
+        for (int p = 0; p < NPAGES_PER_BLOCK; p++) {
+          buf[b][p * PAGE_SIZE_4K] = p;
         }
-    } else {
-        printf("Failed!\n");
-    }
-    if (bg == 0) {
-        in = open("console", O_RDONLY);
-        assert(in >= 0);
-    }
-    return 0;
-}
-
-static int dir(int argc, char **argv)
-{
-    int i = 0, r;
-    char buf[BUF_SIZ];
-
-    if (argc > 2) {
-        printf("Usage: %s [file]\n", argv[0]);
-        return 1;
     }
 
-    if (argc == 2) {
-        r = sos_stat(argv[1], &sbuf);
-        if (r < 0) {
-            printf("stat(%s) failed: %d\n", argv[1], r);
-            return 0;
+    /* check */
+    for (int b = 0; b < NBLOCKS; b++) {
+        for (int p = 0; p < NPAGES_PER_BLOCK; p++) {
+          assert(buf[b][p * PAGE_SIZE_4K] == p);
         }
-        prstat(argv[1]);
-        return 0;
     }
-
-    while (1) {
-        r = sos_getdirent(i, buf, BUF_SIZ);
-        if (r < 0) {
-            printf("dirent(%d) failed: %d\n", i, r);
-            break;
-        } else if (!r) {
-            break;
-        }
-        r = sos_stat(buf, &sbuf);
-        if (r < 0) {
-            printf("stat(%s) failed: %d\n", buf, r);
-            break;
-        }
-        prstat(buf);
-        i++;
-    }
-    return 0;
 }
 
-static int second_sleep(int argc, char *argv[])
+int main(void)
 {
-    if (argc != 2) {
-        printf("Usage: %s seconds\n", argv[0]);
-        return 1;
+    printf("==========Initliase stack=========\n");
+    /* need a decent sized stack */
+    char buf1[NBLOCKS][NPAGES_PER_BLOCK * PAGE_SIZE_4K];
+    char *buf1_ptrs[NBLOCKS];
+    char *buf2[NBLOCKS];
+
+    /* check the stack is above phys mem */
+    for (int b = 0; b < NBLOCKS; b++) {
+        buf1_ptrs[b] = buf1[b];
     }
-    sleep(atoi(argv[1]));
-    return 0;
-}
+    printf("==========before assertion=========\n");
+    assert((void *) buf1 > (void *) TEST_ADDRESS);
 
-static int milli_sleep(int argc, char *argv[])
-{
-    struct timespec tv;
-    uint64_t nanos;
-    if (argc != 2) {
-        printf("Usage: %s milliseconds\n", argv[0]);
-        return 1;
+    // /* stack test */
+    do_pt_test(buf1_ptrs);
+
+    // /* heap test */
+    for (int b = 0; b < NBLOCKS; b++) {
+        buf2[b] = malloc(NPAGES_PER_BLOCK * PAGE_SIZE_4K);
+        assert(buf2[b]);
     }
-    nanos = (uint64_t)atoi(argv[1]) * NS_IN_MS;
-    /* Get whole seconds */
-    tv.tv_sec = nanos / NS_IN_S;
-    /* Get nanos remaining */
-    tv.tv_nsec = nanos % NS_IN_S;
-    nanosleep(&tv, NULL);
-    return 0;
-}
-
-static int second_time(int argc, char *argv[])
-{
-    printf("%d seconds since boot\n", (int)time(NULL));
-    return 0;
-}
-
-static int micro_time(int argc, char *argv[])
-{
-    struct timeval time;
-    gettimeofday(&time, NULL);
-    uint64_t micros = (uint64_t)time.tv_sec * US_IN_S + (uint64_t)time.tv_usec;
-    printf("%lu microseconds since boot\n", micros);
-    return 0;
-}
-
-static int kill(int argc, char *argv[])
-{
-    pid_t pid;
-    if (argc != 2) {
-        printf("Usage: kill pid\n");
-        return 1;
-    }
-
-    pid = atoi(argv[1]);
-    return sos_process_delete(pid);
-}
-
-static int benchmark(int argc, char *argv[])
-{
-    if (argc == 1 || (argc == 2 && strcmp(argv[1], "-d") == 0)) {
-        printf("Running benchmark in DEBUG mode. To run in performance mode, use -p flag\n");
-        return sos_benchmark(1);
-    } else if (argc == 2 && strcmp(argv[1], "-p") == 0) {
-        printf("Running benchmark in PERFORMANCE mode\n");
-        return sos_benchmark(0);
-    } else {
-        printf("Usage: %s [-dp]\n", argv[0]);
-        return -1;
-    }
-}
-
-struct command {
-    char *name;
-    int (*command)(int argc, char **argv);
-};
-
-struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
-        "cp", cp
-    }, { "ps", ps }, { "exec", exec }, {"sleep", second_sleep}, {"msleep", milli_sleep},
-    {"time", second_time}, {"mtime", micro_time}, {"kill", kill},
-    {"benchmark", benchmark}
-};
-
-#define SMALL_BUF_SZ 2
-#define MEDIUM_BUF_SZ 256
-
-char test_str[] = "Basic test string for read/write";
-char small_buf[SMALL_BUF_SZ];
-
-int test_buffers(int console_fd) {
-    int result;
-   /* test a small string from the code segment */
-   result = sos_write(console_fd, test_str, strlen(test_str));
-   assert(result == strlen(test_str));
-
-    /* test reading to a small buffer */
-    result = sos_read(console_fd, small_buf, SMALL_BUF_SZ);
-    /* make sure you type in at least SMALL_BUF_SZ */
-    assert(result == SMALL_BUF_SZ);
-
-    /* test reading into a large on-stack buffer */
-    char stack_buf[MEDIUM_BUF_SZ];
-    /* for this test you'll need to paste a lot of data into
-        the console, without newlines */
-
-    result = sos_read(console_fd, &stack_buf, MEDIUM_BUF_SZ);
-    assert(result == MEDIUM_BUF_SZ);
-
-    result = sos_write(console_fd, &stack_buf, MEDIUM_BUF_SZ);
-    assert(result == MEDIUM_BUF_SZ);
-
-    /* try sleeping */
-    for (int i = 0; i < 5; i++) {
-        time_t prev_seconds = time(NULL);
-        sleep(1);
-        time_t next_seconds = time(NULL);
-        assert(next_seconds > prev_seconds);
-        printf("Tick\n");
-    }
-}
-
-int main(void) {
-    printf("SOSH Starting!!\n");
-    int console_fd = sos_open("console", O_RDONLY);
-    console_fd = sos_open("console", O_WRONLY);
-    assert(console_fd == CONSOLE_FD);
-    test_buffers(console_fd);
+    // do_pt_test(buf2);
+    // for (int b = 0; b < NBLOCKS; b++) {
+    //     free(buf2[b]);
+    // }
     while(1);
 }
+// #include <assert.h>
+// #include <string.h>
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <inttypes.h>
+// #include <unistd.h>
+// #include <fcntl.h>
+// #include <time.h>
+// #include <sys/time.h>
+// #include <utils/time.h>
+// #include <syscalls.h>
+// /* Your OS header file */
+// #include <sos.h>
+
+// #include "benchmark.h"
+
+// #define BUF_SIZ    6144
+// #define MAX_ARGS   32
+
+// static int in;
+// static sos_stat_t sbuf;
+
+// static void prstat(const char *name)
+// {
+//     /* print out stat buf */
+//     printf("%c%c%c%c 0x%06x 0x%lx 0x%06lx %s\n",
+//            sbuf.st_type == ST_SPECIAL ? 's' : '-',
+//            sbuf.st_fmode & FM_READ ? 'r' : '-',
+//            sbuf.st_fmode & FM_WRITE ? 'w' : '-',
+//            sbuf.st_fmode & FM_EXEC ? 'x' : '-', sbuf.st_size, sbuf.st_ctime,
+//            sbuf.st_atime, name);
+// }
+
+// static int cat(int argc, char **argv)
+// {
+//     int fd;
+//     char buf[BUF_SIZ];
+//     int num_read, stdout_fd, num_written = 0;
+
+
+//     if (argc != 2) {
+//         printf("Usage: cat filename\n");
+//         return 1;
+//     }
+
+//     printf("<%s>\n", argv[1]);
+
+//     fd = open(argv[1], O_RDONLY);
+//     stdout_fd = open("console", O_WRONLY);
+
+//     assert(fd >= 0);
+
+//     while ((num_read = read(fd, buf, BUF_SIZ)) > 0) {
+//         num_written = write(stdout_fd, buf, num_read);
+//     }
+
+//     close(stdout_fd);
+//     close(fd);
+
+//     if (num_read == -1 || num_written == -1) {
+//         printf("error on write\n");
+//         return 1;
+//     }
+
+//     return 0;
+// }
+
+// static int cp(int argc, char **argv)
+// {
+//     int fd, fd_out;
+//     char *file1, *file2;
+//     char buf[BUF_SIZ];
+//     int num_read, num_written = 0;
+
+//     if (argc != 3) {
+//         printf("Usage: cp from to\n");
+//         return 1;
+//     }
+
+//     file1 = argv[1];
+//     file2 = argv[2];
+
+//     fd = open(file1, O_RDONLY);
+//     fd_out = open(file2, O_WRONLY);
+
+//     assert(fd >= 0);
+
+//     while ((num_read = read(fd, buf, BUF_SIZ)) > 0) {
+//         num_written = write(fd_out, buf, num_read);
+//     }
+
+//     close(fd_out);
+//     close(fd);
+
+//     if (num_read == -1 || num_written == -1) {
+//         printf("error on cp\n");
+//         return 1;
+//     }
+
+//     return 0;
+// }
+
+// #define MAX_PROCESSES 10
+
+// static int ps(int argc, char **argv)
+// {
+//     sos_process_t *process;
+//     int i, processes;
+
+//     process = malloc(MAX_PROCESSES * sizeof(*process));
+
+//     if (process == NULL) {
+//         printf("%s: out of memory\n", argv[0]);
+//         return 1;
+//     }
+
+//     processes = sos_process_status(process, MAX_PROCESSES);
+    
+//     printf("TID SIZE   STIME   COMMAND\n");
+
+//     for (i = 0; i < processes; i++) {
+//         printf("%3d %4d %7d %9s\n", process[i].pid, process[i].size,
+//                process[i].stime, process[i].command);
+//     }
+
+//     free(process);
+
+//     return 0;
+// }
+
+// static int exec(int argc, char **argv)
+// {
+//     pid_t pid;
+//     int r;
+//     int bg = 0;
+
+//     if (argc < 2 || (argc > 2 && argv[2][0] != '&')) {
+//         printf("Usage: exec filename [&]\n");
+//         return 1;
+//     }
+
+//     if ((argc > 2) && (argv[2][0] == '&')) {
+//         bg = 1;
+//     }
+
+//     if (bg == 0) {
+//         r = close(in);
+//         assert(r == 0);
+//     }
+
+//     pid = sos_process_create(argv[1]);
+//     if (pid >= 0) {
+//         printf("Child pid=%d\n", pid);
+//         if (bg == 0) {
+//             sos_process_wait(pid);
+//         }
+//     } else {
+//         printf("Failed!\n");
+//     }
+//     if (bg == 0) {
+//         in = open("console", O_RDONLY);
+//         assert(in >= 0);
+//     }
+//     return 0;
+// }
+
+// static int dir(int argc, char **argv)
+// {
+//     int i = 0, r;
+//     char buf[BUF_SIZ];
+
+//     if (argc > 2) {
+//         printf("Usage: %s [file]\n", argv[0]);
+//         return 1;
+//     }
+
+//     if (argc == 2) {
+//         r = sos_stat(argv[1], &sbuf);
+//         if (r < 0) {
+//             printf("stat(%s) failed: %d\n", argv[1], r);
+//             return 0;
+//         }
+//         prstat(argv[1]);
+//         return 0;
+//     }
+
+//     while (1) {
+//         r = sos_getdirent(i, buf, BUF_SIZ);
+//         if (r < 0) {
+//             printf("dirent(%d) failed: %d\n", i, r);
+//             break;
+//         } else if (!r) {
+//             break;
+//         }
+//         r = sos_stat(buf, &sbuf);
+//         if (r < 0) {
+//             printf("stat(%s) failed: %d\n", buf, r);
+//             break;
+//         }
+//         prstat(buf);
+//         i++;
+//     }
+//     return 0;
+// }
+
+// static int second_sleep(int argc, char *argv[])
+// {
+//     if (argc != 2) {
+//         printf("Usage: %s seconds\n", argv[0]);
+//         return 1;
+//     }
+//     sleep(atoi(argv[1]));
+//     return 0;
+// }
+
+// static int milli_sleep(int argc, char *argv[])
+// {
+//     struct timespec tv;
+//     uint64_t nanos;
+//     if (argc != 2) {
+//         printf("Usage: %s milliseconds\n", argv[0]);
+//         return 1;
+//     }
+//     nanos = (uint64_t)atoi(argv[1]) * NS_IN_MS;
+//     /* Get whole seconds */
+//     tv.tv_sec = nanos / NS_IN_S;
+//     /* Get nanos remaining */
+//     tv.tv_nsec = nanos % NS_IN_S;
+//     nanosleep(&tv, NULL);
+//     return 0;
+// }
+
+// static int second_time(int argc, char *argv[])
+// {
+//     printf("%d seconds since boot\n", (int)time(NULL));
+//     return 0;
+// }
+
+// static int micro_time(int argc, char *argv[])
+// {
+//     struct timeval time;
+//     gettimeofday(&time, NULL);
+//     uint64_t micros = (uint64_t)time.tv_sec * US_IN_S + (uint64_t)time.tv_usec;
+//     printf("%lu microseconds since boot\n", micros);
+//     return 0;
+// }
+
+// static int kill(int argc, char *argv[])
+// {
+//     pid_t pid;
+//     if (argc != 2) {
+//         printf("Usage: kill pid\n");
+//         return 1;
+//     }
+
+//     pid = atoi(argv[1]);
+//     return sos_process_delete(pid);
+// }
+
+// static int benchmark(int argc, char *argv[])
+// {
+//     if (argc == 1 || (argc == 2 && strcmp(argv[1], "-d") == 0)) {
+//         printf("Running benchmark in DEBUG mode. To run in performance mode, use -p flag\n");
+//         return sos_benchmark(1);
+//     } else if (argc == 2 && strcmp(argv[1], "-p") == 0) {
+//         printf("Running benchmark in PERFORMANCE mode\n");
+//         return sos_benchmark(0);
+//     } else {
+//         printf("Usage: %s [-dp]\n", argv[0]);
+//         return -1;
+//     }
+// }
+
+// struct command {
+//     char *name;
+//     int (*command)(int argc, char **argv);
+// };
+
+// struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
+//         "cp", cp
+//     }, { "ps", ps }, { "exec", exec }, {"sleep", second_sleep}, {"msleep", milli_sleep},
+//     {"time", second_time}, {"mtime", micro_time}, {"kill", kill},
+//     {"benchmark", benchmark}
+// };
+
+// #define SMALL_BUF_SZ 2
+// #define MEDIUM_BUF_SZ 256
+
+// char test_str[] = "Basic test string for read/write";
+// char small_buf[SMALL_BUF_SZ];
+
+// int test_buffers(int console_fd) {
+//     int result;
+//    /* test a small string from the code segment */
+//    result = sos_write(console_fd, test_str, strlen(test_str));
+//    assert(result == strlen(test_str));
+
+//     /* test reading to a small buffer */
+//     result = sos_read(console_fd, small_buf, SMALL_BUF_SZ);
+//     /* make sure you type in at least SMALL_BUF_SZ */
+//     assert(result == SMALL_BUF_SZ);
+
+//     /* test reading into a large on-stack buffer */
+//     char stack_buf[MEDIUM_BUF_SZ];
+//     /* for this test you'll need to paste a lot of data into
+//         the console, without newlines */
+
+//     result = sos_read(console_fd, &stack_buf, MEDIUM_BUF_SZ);
+//     assert(result == MEDIUM_BUF_SZ);
+
+//     result = sos_write(console_fd, &stack_buf, MEDIUM_BUF_SZ);
+//     assert(result == MEDIUM_BUF_SZ);
+
+//     /* try sleeping */
+//     for (int i = 0; i < 5; i++) {
+//         time_t prev_seconds = time(NULL);
+//         sleep(1);
+//         time_t next_seconds = time(NULL);
+//         assert(next_seconds > prev_seconds);
+//         printf("Tick\n");
+//     }
+// }
+
+// int main(void) {
+//     printf("SOSH Starting!!\n");
+//     int console_fd = sos_open("console", O_RDONLY);
+//     console_fd = sos_open("console", O_WRONLY);
+//     assert(console_fd == CONSOLE_FD);
+//     test_buffers(console_fd);
+//     while(1);
+// }
 // int main(void)
 // {
 //     char buf[BUF_SIZ];
