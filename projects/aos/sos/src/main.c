@@ -70,7 +70,7 @@
 
 /* The number of additional stack pages to provide to the initial
  * process */
-#define INITIAL_PROCESS_EXTRA_STACK_PAGES 4
+#define INITIAL_PROCESS_EXTRA_STACK_PAGES 9*29
 
 
 /* Network console (nwcs) circular queue buffer, size = MAX_PAYLOAD_SIZE in networkconsole.c */
@@ -113,6 +113,7 @@ static struct {
 
     list_t *paging_objects;
     list_t *frame_refs;
+    list_t *regions;
 } user_process;
 
 struct syscall_loop_args {
@@ -415,6 +416,12 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
     }
+    /* Create a stack region */
+    err = add_region(user_process.regions, stack_top, stack_bottom - stack_top, seL4_CapRights_new(false, false, true, true), true);
+    if (err) {
+        ZF_LOGE("Unable to add stack region");
+        return 0;
+    }
 
     return stack_top;
 }
@@ -463,6 +470,10 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     /* Initialise a linked list of frame refs */
     user_process.frame_refs = malloc(sizeof(list_t));
     list_init(user_process.frame_refs);
+
+    /* Initialise a linked list of regions */
+    user_process.regions = malloc(sizeof(list_t));
+    list_init(user_process.regions);
 
     /* allocate a new slot in the target cspace which we will mint a badged endpoint cap into --
      * the badge is used to identify the process, which will come in handy when you have multiple
@@ -546,7 +557,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     seL4_Word sp = init_process_stack(&cspace, seL4_CapInitThreadVSpace, &elf_file);
 
     /* load the elf image from the cpio file */
-    err = elf_load(&cspace, user_process.vspace, &elf_file, user_process.paging_objects, user_process.frame_refs);
+    err = elf_load(&cspace, user_process.vspace, &elf_file, user_process.paging_objects, user_process.frame_refs, user_process.regions);
     if (err) {
         ZF_LOGE("Failed to load elf image");
         return false;

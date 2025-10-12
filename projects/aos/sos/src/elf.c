@@ -154,9 +154,9 @@ static int load_segment_into_vspace(cspace_t *cspace, seL4_CPtr loadee, const ch
     return 0;
 }
 
-int elf_load(cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file, list_t *paging_objects, list_t *frame_refs)
+int elf_load(cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file, list_t *paging_objects, list_t *frame_refs, list_t *regions)
 {
-
+    uintptr_t heap_vaddr_base;
     int num_headers = elf_getNumProgramHeaders(elf_file);
     for (int i = 0; i < num_headers; i++) {
 
@@ -172,6 +172,16 @@ int elf_load(cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file, list_t 
         uintptr_t vaddr = elf_getProgramHeaderVaddr(elf_file, i);
         seL4_Word flags = elf_getProgramHeaderFlags(elf_file, i);
 
+        if (i == num_headers - 1) {
+            heap_vaddr_base = (ROUND_UP(vaddr + segment_size, PAGE_SIZE_4K));
+        }
+
+        /* Create a region for this segment */
+        if (add_region(regions, vaddr, segment_size, get_sel4_rights_from_elf(flags), false)) {
+            ZF_LOGE("Unable to create a region");
+            return -1;
+        }
+
         /* Copy it across into the vspace. */
         ZF_LOGE(" * Loading segment %p-->%p\n", (void *) vaddr, (void *)(vaddr + segment_size));
         int err = load_segment_into_vspace(cspace, loadee_vspace, source_addr, segment_size, file_size, vaddr,
@@ -180,6 +190,13 @@ int elf_load(cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file, list_t 
             ZF_LOGE("Elf loading failed!");
             return -1;
         }
+    }
+    
+    
+    /* Create a heap region */
+    if (add_region(regions, heap_vaddr_base, 0, seL4_CapRights_new(false, false, true, true), false)) {
+        ZF_LOGE("Unable to create a heap region");
+        return -1;
     }
 
     return 0;
