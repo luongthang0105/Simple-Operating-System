@@ -73,8 +73,8 @@
 #define INITIAL_PROCESS_EXTRA_STACK_PAGES 9*29
 
 
-/* Network console (nwcs) circular queue buffer, size = MAX_PAYLOAD_SIZE in networkconsole.c */
-#define DIM 1024
+/* Network console (nwcs) circular queue buffer */
+#define DIM 8092
 static char nwcs_buf[DIM];
 static int i, j;
 static int nwcs_reader = -1; // thread index that is currently the nwcs reader
