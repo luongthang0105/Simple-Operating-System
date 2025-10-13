@@ -170,7 +170,7 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
     uintptr_t heap_base = user_process.heap_region->vaddr_base;
     uintptr_t curr_brk = heap_base + user_process.heap_region->size;
 
-    if (new_brk < heap_base || ROUND_UP(new_brk, PAGE_SIZE_4K) >= guard_page_vaddr) {
+    if (new_brk < heap_base || new_brk > guard_page_vaddr) {
         ZF_LOGE("New program break is not valid");
         seL4_SetMR(0, 0);
         return;
@@ -533,7 +533,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         ZF_LOGE("Unable to add stack region");
         return 0;
     }
-    user_process.guard_page_vaddr = stack_bottom + PAGE_SIZE_4K;
+    user_process.guard_page_vaddr = stack_bottom - PAGE_SIZE_4K;
     return stack_top;
 }
 
