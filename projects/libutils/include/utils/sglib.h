@@ -212,6 +212,7 @@
 #define SGLIB_QUEUE_DELETE(type, a, i, j, dim) {\
   SGLIB_QUEUE_DELETE_FIRST(type, a, i, j, dim);\
 }
+#define SGLIB_QUEUE_LENGTH(type, a, i, j, dim) (((j) - (i) + (dim)) % (dim))
 
 /* ----------------- priority queue (heap) (in an array) -------------------- */
 /* heap is a triple (a,i,dim) such that:                                      */
