@@ -443,12 +443,6 @@ static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
  * start up and initialise the C library */
 static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, elf_t *elf_file)
 {
-    /* Create a stack frame */
-    user_process.stack_ut = alloc_retype(&user_process.stack, seL4_ARM_SmallPageObject, seL4_PageBits);
-    if (user_process.stack_ut == NULL) {
-        ZF_LOGE("Failed to allocate stack");
-        return 0;
-    }
 
     /* virtual addresses in the target process' address space */
     uintptr_t stack_top = PROCESS_STACK_TOP;
@@ -464,8 +458,32 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         return 0;
     }
 
+    // TODO: PUT THESE THINGS INTO A HELPER FUNCTION PLS
+    frame_ref_t frame = alloc_frame();
+    if (frame == NULL_FRAME) {
+        ZF_LOGE("Couldn't allocate additional stack frame");
+        return 0;
+    }
+
+    /* allocate a slot to duplicate the stack frame cap so we can map it into the application */
+    user_process.stack = cspace_alloc_slot(cspace);
+    if (user_process.stack == seL4_CapNull) {
+        free_frame(frame);
+        ZF_LOGE("Failed to alloc slot for stack extra stack frame");
+        return 0;
+    }
+
+    /* copy the stack frame cap into the slot */
+    seL4_Error err = cspace_copy(cspace, user_process.stack, cspace, frame_page(frame), seL4_AllRights);
+    if (err != seL4_NoError) {
+        cspace_free_slot(cspace, user_process.stack);
+        free_frame(frame);
+        ZF_LOGE("Failed to copy cap");
+        return 0;
+    }
+
     /* Map in the stack frame for the user app */
-    seL4_Error err = sos_map_frame(cspace, NULL_FRAME, user_process.stack, user_process.vspace, stack_bottom,
+    err = sos_map_frame(cspace, frame, user_process.stack, user_process.vspace, stack_bottom,
                                seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
     if (err != 0) {
         ZF_LOGE("Unable to map stack for user app");
@@ -893,7 +911,7 @@ NORETURN void *main_continued(UNUSED void *arg)
         
         /* Start the worker thread */
         struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
-        sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, i + 1, false, seL4_MinPrio, thread_ntfn, false);
+        sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, i + 1, false, seL4_MinPrio, thread_ntfn, true);
         
         // worker thread IPC EP is created within 
         worker_sys_loop_args->ep = thread->ipc_ep;
