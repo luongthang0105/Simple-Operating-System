@@ -39,7 +39,6 @@ do_pt_test(char **buf)
 
 int main(void)
 {
-    printf("==========Initliase stack=========\n");
     /* need a decent sized stack */
     char buf1[NBLOCKS][NPAGES_PER_BLOCK * PAGE_SIZE_4K];
     char *buf1_ptrs[NBLOCKS];
@@ -49,7 +48,6 @@ int main(void)
     for (int b = 0; b < NBLOCKS; b++) {
         buf1_ptrs[b] = buf1[b];
     }
-    printf("==========before assertion=========\n");
     assert((void *) buf1 > (void *) TEST_ADDRESS);
 
     // /* stack test */
@@ -60,10 +58,10 @@ int main(void)
         buf2[b] = malloc(NPAGES_PER_BLOCK * PAGE_SIZE_4K);
         assert(buf2[b]);
     }
-    // do_pt_test(buf2);
-    // for (int b = 0; b < NBLOCKS; b++) {
-    //     free(buf2[b]);
-    // }
+    do_pt_test(buf2);
+    for (int b = 0; b < NBLOCKS; b++) {
+        free(buf2[b]);
+    }
     while(1);
 }
 // #include <assert.h>
