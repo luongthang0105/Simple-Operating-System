@@ -185,6 +185,7 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
             seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
         }
         // find the frame associated with this buf_vaddr
+        bool found_page = false;
         for (   struct list_node *cur = user_process.frame_refs->head; 
                 cur != NULL; 
                 cur = cur->next) 
@@ -194,6 +195,7 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
 
                 if (frame->vaddr < buf_vaddr && buf_vaddr < frame->vaddr + PAGE_SIZE_4K) {
                     // write the character to the frame
+                    found_page = true;
                     size_t num_bytes_to_write = MIN(remaining_bytes, PAGE_SIZE_4K - offset);
                     num_bytes_to_write = MIN(num_bytes_to_write, SGLIB_QUEUE_LENGTH(char, nwcs_buf, i, j, DIM));
 
@@ -213,6 +215,12 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
                     break;
                 }
             }
+        if (!found_page) {
+            ZF_LOGE("page not found for buf_vaddr=%p\n", buf_vaddr);
+            nwcs_reader = -1;
+            seL4_SetMR(0, nbytes - remaining_bytes);
+            break;
+        }
     }
     nwcs_reader = -1;
     seL4_SetMR(0, nbytes);
