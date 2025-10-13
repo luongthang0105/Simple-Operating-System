@@ -17,6 +17,7 @@ struct user_process {
 
     ut_t *stack_ut;
     seL4_CPtr stack;
+    uintptr_t guard_page_vaddr;
 
     list_t *paging_objects;
     list_t *frame_refs;

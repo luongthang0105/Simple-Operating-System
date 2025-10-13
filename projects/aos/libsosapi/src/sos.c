@@ -88,20 +88,14 @@ int sos_read(int file, char *buf, size_t nbyte)
     if (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_READ(cur_file->mode)) {
         return -1;
     }
-    int num_byte_read = 0;
-    for (size_t i = 0; i < nbyte; ++i) {
-        seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
-        seL4_SetMR(0, SYSCALL_SOS_READ); 
-        seL4_SetMR(1, file);
-        
-        seL4_Call(SOS_IPC_EP_CAP, tag);
-        seL4_Word character = seL4_GetMR(0);
-        buf[i] = character;
-        num_byte_read += 1;
-        if (character == '\n') {
-            break;
-        }
-    }
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_READ); 
+    seL4_SetMR(1, file);
+    seL4_SetMR(2, buf);
+    seL4_SetMR(3, nbyte);
+
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+    seL4_Word num_byte_read = seL4_GetMR(0);
     return num_byte_read;
 }
 
@@ -152,6 +146,7 @@ int sos_process_delete(pid_t pid)
 
 pid_t sos_my_id(void)
 {
+
     assert(!"You need to implement this");
     return -1;
 

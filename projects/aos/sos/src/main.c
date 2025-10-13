@@ -175,18 +175,49 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg) {
 
 void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
     ZF_LOGV("syscall: read!\n");
-    if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
-        nwcs_reader = thread_index; // THREAD-SAFE because only allows 1 nwcs reader at a time
-        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
-    }
-    
-    /* send first char from buf back to client */
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-    seL4_SetMR(0, SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j));
+   
+    uintptr_t buf_vaddr = seL4_GetMR(2);
+    int nbytes = seL4_GetMR(3);
+    int remaining_bytes = nbytes;
     
-    SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
-    
+    while (remaining_bytes > 0) {
+        if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
+            nwcs_reader = thread_index;
+            seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+        }
+        // find the frame associated with this buf_vaddr
+        for (   struct list_node *cur = user_process.frame_refs->head; 
+                cur != NULL; 
+                cur = cur->next) 
+            {
+                frame_metadata_t *frame = (frame_metadata_t *)cur->data;
+                size_t offset = buf_vaddr % PAGE_SIZE_4K;
+
+                if (frame->vaddr < buf_vaddr && buf_vaddr < frame->vaddr + PAGE_SIZE_4K) {
+                    // write the character to the frame
+                    size_t num_bytes_to_write = MIN(remaining_bytes, PAGE_SIZE_4K - offset);
+                    num_bytes_to_write = MIN(num_bytes_to_write, SGLIB_QUEUE_LENGTH(char, nwcs_buf, i, j, DIM));
+
+                    unsigned char* data = frame_data(frame->frame_ref);
+                    for (int index = 0; index < num_bytes_to_write; index++) {
+                        char char_to_write = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
+                        data[offset + index] = char_to_write;
+                        remaining_bytes -= 1;
+                        buf_vaddr += 1;
+                        SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+                        if (char_to_write == '\n') {
+                            nwcs_reader = -1;
+                            seL4_SetMR(0, nbytes - remaining_bytes);
+                            return;
+                        }
+                    }
+                    break;
+                }
+            }
+    }
     nwcs_reader = -1;
+    seL4_SetMR(0, nbytes);
 }
 
 void handler_sos_timestamp(seL4_MessageInfo_t *reply_msg) {
@@ -205,7 +236,7 @@ void handler_sos_usleep(seL4_MessageInfo_t *reply_msg, int thread_index) {
     seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
 }
 
-void handler_sos_brk(seL4_MessageInfo_t *reply_msg, int thread_index) {
+void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
     ZF_LOGV("syscall: brk!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
@@ -219,11 +250,11 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg, int thread_index) {
         - within the heap & stack bottom
     */
     
-    uintptr_t stack_bottom = user_process.stack_region->vaddr_base - user_process.stack_region->size;
+    uintptr_t guard_page_vaddr = user_process.guard_page_vaddr;
     uintptr_t heap_base = user_process.heap_region->vaddr_base;
     uintptr_t curr_brk = heap_base + user_process.heap_region->size;
 
-    if (new_brk < heap_base || new_brk >= stack_bottom) {
+    if (new_brk < heap_base || new_brk > guard_page_vaddr) {
         ZF_LOGE("New program break is not valid");
         seL4_SetMR(0, 0);
         return;
@@ -238,21 +269,21 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg, int thread_index) {
         while (next_page_vaddr_to_alloc < new_brk) {
             frame_ref_t frame = alloc_frame();
             if (frame == NULL_FRAME) {
-                ZF_LOGE("Couldn't allocate additional stack frame");
+                ZF_LOGE("Couldn't allocate additional frame");
                 seL4_SetMR(0, 0);
                 return;
             }
 
-            /* allocate a slot to duplicate the stack frame cap so we can map it into the application */
+            /* allocate a slot to duplicate the frame cap so we can map it into the application */
             seL4_CPtr frame_cptr = cspace_alloc_slot(&cspace);
             if (frame_cptr == seL4_CapNull) {
                 free_frame(frame);
-                ZF_LOGE("Failed to alloc slot for stack extra stack frame");
+                ZF_LOGE("Failed to alloc slot for extra frame cap");
                 seL4_SetMR(0, 0);
                 return;
             }
 
-            /* copy the stack frame cap into the slot */
+            /* copy the frame cap into the slot */
             seL4_Error err = cspace_copy(&cspace, frame_cptr, &cspace, frame_page(frame), seL4_AllRights);
             if (err != seL4_NoError) {
                 cspace_free_slot(&cspace, frame_cptr);
@@ -268,7 +299,7 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg, int thread_index) {
                 cspace_delete(&cspace, frame_cptr);
                 cspace_free_slot(&cspace, frame_cptr);
                 free_frame(frame);
-                ZF_LOGE("Unable to map extra stack frame for user app");
+                ZF_LOGE("Unable to map extra frame for user app");
                 seL4_SetMR(0, 0);
                 return;
             }
@@ -363,7 +394,7 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
         handler_sos_usleep(&reply_msg, thread_index);   
         break;
     case SYSCALL_SOS_BRK:
-        handler_sos_brk(&reply_msg, thread_index);
+        handler_sos_brk(&reply_msg);
         break;
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
@@ -378,7 +409,6 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
 void write_to_buf(struct network_console *network_console, char c) {
     bool is_empty_before = SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j);
     SGLIB_QUEUE_ADD(char, nwcs_buf, c, i, j, DIM);
-
     if (is_empty_before && nwcs_reader != -1) {
         seL4_Signal(worker_threads[nwcs_reader]->ntfn);
     }
@@ -443,7 +473,6 @@ static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
  * start up and initialise the C library */
 static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, elf_t *elf_file)
 {
-
     /* virtual addresses in the target process' address space */
     uintptr_t stack_top = PROCESS_STACK_TOP;
     uintptr_t stack_bottom = PROCESS_STACK_TOP - PAGE_SIZE_4K;
@@ -604,6 +633,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         ZF_LOGE("Unable to add stack region");
         return 0;
     }
+    user_process.guard_page_vaddr = stack_bottom - PAGE_SIZE_4K;
     return stack_top;
 }
 
