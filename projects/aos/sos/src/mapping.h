@@ -94,6 +94,18 @@ seL4_Error map_frame_cspace(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vsp
 seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
                      seL4_ARM_VMAttributes attr);
 
+/* Maps a page, allocating intermediate structures and cslots with the cspace provided.
+ * Any intermediate structures, frames, cptrs allocated are saved, so that they can be deleted in the future.
+ *
+ * @param cspace          CSpace which can be used to allocate slots for intermediate paging structures.
+ * @param frame_cap       A capbility to the frame to be mapped (seL4_ARM_SmallPageObject).
+ * @param vspace          A capability to the vspace (seL4_ARM_PageGlobalDirectoryObject).
+ * @param vaddr           The virtual address to map the frame.
+ * @param rights          The access rights for the mapping
+ * @param attr            The VM attributes to use for the mapping
+ *
+ * @return 0 on success
+ */
 seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
                          seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs);
 /*

@@ -106,6 +106,13 @@ static int load_segment_into_vspace(cspace_t *cspace, seL4_CPtr loadee, const ch
         /* map the frame into the loadee address space */
         err = sos_map_frame(cspace, frame, loadee_frame, loadee, loadee_vaddr, permissions,
                         seL4_ARM_Default_VMAttributes, paging_objects, frame_refs);
+        if (err != seL4_NoError) {
+            cspace_delete(cspace, loadee_frame);
+            cspace_free_slot(cspace, loadee_frame);
+            free_frame(frame);
+            ZF_LOGE("Unable to map frame into loadee adress space");
+            return 0;
+        }
 
         /* A frame has already been mapped at this address. This occurs when segments overlap in
          * the same frame, which is permitted by the standard. That's fine as we

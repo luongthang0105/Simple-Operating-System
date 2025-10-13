@@ -204,6 +204,13 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
 seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
                      seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs)
 {
+    // does not map the first page of the virtual address space
+    // This prevents accidental usage of NULL 
+    if (vaddr < PAGE_SIZE_4K) {
+        ZF_LOGE("vaddr must not be within the first page of the virtual address space");
+        return seL4_InvalidArgument;
+    }
+
     seL4_Error err = sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, paging_objects);
     if (!err) {
         frame_metadata_t *frame_metadata = malloc(sizeof(frame_metadata_t));
