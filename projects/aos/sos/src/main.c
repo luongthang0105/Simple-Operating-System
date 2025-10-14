@@ -423,6 +423,65 @@ void write_to_buf(struct network_console *network_console, char c) {
     }
 }
 
+bool is_in_range(uintptr_t start, uintptr_t end, uintptr_t addr) {
+    return start <= addr && addr < end;
+}
+
+bool is_valid_region(seL4_Uint64 faultaddr) {
+    for (struct list_node *cur = user_process.vm_regions->head; cur != NULL; cur = cur->next ) {
+        vm_region_t *vm_region = (vm_region_t *)cur->data;
+        uintptr_t region_start = vm_region->vaddr_base;
+        uintptr_t region_end;
+        if (vm_region->grows_downward) {
+            region_end = region_start - vm_region->size;
+            if (is_in_range(region_end, region_start, faultaddr)) return true;
+        } else {
+            region_end = region_start + vm_region->size;
+            if (is_in_range(region_start, region_end, faultaddr)) return true;
+        }
+    }
+    return false;
+}
+
+void handle_vm_fault(seL4_Fault_t fault, seL4_MessageInfo_t *reply_msg, bool *have_reply) {
+    seL4_Uint64 faultaddr = seL4_Fault_VMFault_get_Addr(fault);
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+
+    if (!is_valid_region(faultaddr)) {
+        ZF_LOGE("Fault address %lu resolves to an invalid region access", faultaddr);
+        *have_reply = false; // don't reply to the user process if the fault vaddr is invalid
+        return;
+    }
+
+    // alocate a frame for it
+
+    *have_reply = true;
+    seL4_SetMR(0, 0);
+    return;
+
+}
+
+seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply) {
+    seL4_MessageInfo_t reply_msg;
+    seL4_Fault_t fault = seL4_getFault(tag);
+    seL4_Uint64 fault_type = seL4_Fault_get_seL4_FaultType(fault);
+
+    switch (fault_type) {
+        case seL4_Fault_VMFault:
+            handle_vm_fault(fault, &reply_msg, have_reply);
+            break;
+        default:
+            reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
+            ZF_LOGE("Unknown fault %lu\n", fault_type);
+            /* Don't reply to an unknown fault */
+            *have_reply = false;
+            break;
+    }
+    return reply_msg;
+
+}
+
+
 NORETURN void syscall_loop(void* arg)
 {
     seL4_CPtr reply;    
@@ -464,9 +523,8 @@ NORETURN void syscall_loop(void* arg)
             debug_print_fault(message, APP_NAME);
             /* dump registers too */
             debug_dump_registers(user_process.tcb);
-            /* Don't reply and recv on nothing */
-            have_reply = false;
-
+            /* Handle the vm fault */
+            handle_fault(message, &have_reply);
             ZF_LOGF("The SOS skeleton does not know how to handle faults!");
         }
     }
