@@ -123,47 +123,36 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg) {
     
     size_t rem_bytes = nbytes;
     while (rem_bytes > 0) {
-        bool found_page = false;
-        for (   struct list_node *cur = user_process.frame_refs->head; 
-                cur != NULL; 
-                cur = cur->next) 
-        {
-            frame_metadata_t *frame = (frame_metadata_t *)cur->data;
-            // finds frame whose vaddr range includes buf_vaddr 
-            if (frame->vaddr <= buf_vaddr && buf_vaddr < frame->vaddr + PAGE_SIZE_4K) {
-                found_page = true;
-                unsigned char* data = frame_data(frame->frame_ref);
-                size_t offset = buf_vaddr % PAGE_SIZE_4K;
-                size_t max_bytes_to_send = PAGE_SIZE_4K - offset;
-    
-                /*  [  offset  ][  max_bytes_to_send  ]
-                    [          4096 bytes             ]
-                    A frame has 4096 bytes, but the buf data only starts at data[offset].
-                    Hence, there are only (PAGE_SIZE_4K - offset) bytes left to send.
-                    
-                    If rem_bytes is smaller than max_bytes_to_send, so we send rem_bytes only.
-                    Otherwise, we send max_bytes_to_send only, 
-                    leaving (rem_bytes - max_bytes_to_send) bytes for the next iteration.
-                */
-                size_t bytes_to_send = MIN(rem_bytes, max_bytes_to_send);
-                size_t bytes_sent = network_console_send(network_console, &data[offset], bytes_to_send);
-                if (bytes_sent == -1) {
-                    ZF_LOGE("Failed to send %d bytes via network_console_send", bytes_to_send);
-                    seL4_SetMR(0, -1);
-                    return;
-                }
-
-                rem_bytes -= bytes_sent;
-                buf_vaddr += bytes_sent;
-                break;
-            }
-        }
-        
-        if (!found_page) {
+        frame_metadata_t *frame = find_frame(buf_vaddr, user_process.page_global_directory);
+        if (!frame) {
             ZF_LOGE("Unable to find a frame for buf_vaddr at %p", buf_vaddr);
             seL4_SetMR(0, -1);
             return;
         }
+       
+        unsigned char* data = frame_data(frame->frame_ref);
+        size_t offset = buf_vaddr % PAGE_SIZE_4K;
+        size_t max_bytes_to_send = PAGE_SIZE_4K - offset;
+
+        /*  [  offset  ][  max_bytes_to_send  ]
+            [          4096 bytes             ]
+            A frame has 4096 bytes, but the buf data only starts at data[offset].
+            Hence, there are only (PAGE_SIZE_4K - offset) bytes left to send.
+            
+            If rem_bytes is smaller than max_bytes_to_send, so we send rem_bytes only.
+            Otherwise, we send max_bytes_to_send only, 
+            leaving (rem_bytes - max_bytes_to_send) bytes for the next iteration.
+        */
+        size_t bytes_to_send = MIN(rem_bytes, max_bytes_to_send);
+        size_t bytes_sent = network_console_send(network_console, &data[offset], bytes_to_send);
+        if (bytes_sent == -1) {
+            ZF_LOGE("Failed to send %d bytes via network_console_send", bytes_to_send);
+            seL4_SetMR(0, -1);
+            return;
+        }
+
+        rem_bytes -= bytes_sent;
+        buf_vaddr += bytes_sent;
     }
     
     seL4_SetMR(0, nbytes - rem_bytes);
@@ -188,42 +177,32 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
             seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
         }
         // find the frame associated with this buf_vaddr
-        bool found_page = false;
-        for (   struct list_node *cur = user_process.frame_refs->head; 
-                cur != NULL; 
-                cur = cur->next) 
-            {
-                frame_metadata_t *frame = (frame_metadata_t *)cur->data;
-                size_t offset = buf_vaddr % PAGE_SIZE_4K;
-
-                if (frame->vaddr <= buf_vaddr && buf_vaddr < frame->vaddr + PAGE_SIZE_4K) {
-                    // write the character to the frame
-                    found_page = true;
-                    size_t num_bytes_to_write = MIN(remaining_bytes, PAGE_SIZE_4K - offset);
-                    num_bytes_to_write = MIN(num_bytes_to_write, SGLIB_QUEUE_LENGTH(char, nwcs_buf, i, j, DIM));
-
-                    unsigned char* data = frame_data(frame->frame_ref);
-                    for (int index = 0; index < num_bytes_to_write; index++) {
-                        char char_to_write = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
-                        data[offset + index] = char_to_write;
-                        remaining_bytes -= 1;
-                        buf_vaddr += 1;
-                        SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
-                        if (char_to_write == '\n') {
-                            nwcs_reader = -1;
-                            seL4_SetMR(0, nbytes - remaining_bytes);
-                            return;
-                        }
-                    }
-                    break;
-                }
-            }
-        if (!found_page) {
+        frame_metadata_t *frame = find_frame(buf_vaddr, user_process.page_global_directory);
+        if (!frame) {
             ZF_LOGE("page not found for buf_vaddr=%p\n", buf_vaddr);
             nwcs_reader = -1;
             seL4_SetMR(0, nbytes - remaining_bytes);
             break;
         }
+        size_t offset = buf_vaddr % PAGE_SIZE_4K;
+
+        // write the character to the frame
+        size_t num_bytes_to_write = MIN(remaining_bytes, PAGE_SIZE_4K - offset);
+        num_bytes_to_write = MIN(num_bytes_to_write, SGLIB_QUEUE_LENGTH(char, nwcs_buf, i, j, DIM));
+
+        unsigned char* data = frame_data(frame->frame_ref);
+        for (int index = 0; index < num_bytes_to_write; index++) {
+            char char_to_write = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
+            data[offset + index] = char_to_write;
+            remaining_bytes -= 1;
+            buf_vaddr += 1;
+            SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+            if (char_to_write == '\n') {
+                nwcs_reader = -1;
+                seL4_SetMR(0, nbytes - remaining_bytes);
+                return;
+            }
+        }        
     }
     nwcs_reader = -1;
     seL4_SetMR(0, nbytes);
@@ -303,7 +282,7 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
             }
 
             err = sos_map_frame(&cspace, frame, frame_cptr, user_process.vspace, next_page_vaddr_to_alloc,
-                            seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
+                            seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
             if (err != 0) {
                 cspace_delete(&cspace, frame_cptr);
                 cspace_free_slot(&cspace, frame_cptr);
@@ -318,52 +297,11 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
         uintptr_t next_page_vaddr_to_dealloc = ROUND_DOWN(curr_brk, PAGE_SIZE_4K);
         
         while (next_page_vaddr_to_dealloc >= new_brk) {
-            bool found_page = false;
-            for (   struct list_node *prev = NULL, *cur = user_process.frame_refs->head; 
-                    cur != NULL; 
-                    prev = cur, 
-                    cur = cur->next) 
-            {
-                frame_metadata_t *frame = (frame_metadata_t *)cur->data;
-                if (frame->vaddr == next_page_vaddr_to_dealloc) {
-                    found_page = true;
-
-                    if (prev == NULL) {
-                        /* Removing the list head. */
-                        user_process.frame_refs->head = cur->next;
-                    } else {
-                        prev->next = cur->next;
-                    }
-
-                    seL4_Error err = seL4_ARM_Page_Unmap(frame->frame_cap);
-                    if (err != seL4_NoError) {
-                        ZF_LOGE("Unable to unmap the page when deallocating the frames");
-                        seL4_SetMR(0, 0);
-                        return;
-                    }
-
-                    err = cspace_delete(&cspace, frame->frame_cap);
-                    if (err != seL4_NoError) {
-                        ZF_LOGE("Unable to delete the copy of the frame cap");
-                        seL4_SetMR(0, 0);
-                        return;
-                    }
-
-                    cspace_free_slot(&cspace, frame->frame_cap);
-
-                    free_frame(frame->frame_ref);
-
-                    free(cur);
-                    break;
-                }
-            }
-
-            if (!found_page) {
-                ZF_LOGE("Unable to find the mapped page at vaddr=%p", next_page_vaddr_to_dealloc);
+            int ret = sos_shadow_unmap_frame(next_page_vaddr_to_dealloc, user_process.page_global_directory, &cspace);
+            if (ret == -1) {
                 seL4_SetMR(0, 0);
                 return;
             }
-
             next_page_vaddr_to_dealloc -= PAGE_SIZE_4K;
         }
     }
@@ -522,7 +460,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
 
     /* Map in the stack frame for the user app */
     err = sos_map_frame(cspace, frame, user_process.stack, user_process.vspace, stack_bottom,
-                               seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
+                               seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
     if (err != 0) {
         ZF_LOGE("Unable to map stack for user app");
         return 0;
@@ -627,7 +565,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         }
 
         err = sos_map_frame(cspace, frame, frame_cptr, user_process.vspace, stack_bottom,
-                        seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
+                        seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
         if (err != 0) {
             cspace_delete(cspace, frame_cptr);
             cspace_free_slot(cspace, frame_cptr);
@@ -685,14 +623,25 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
 
     /* Initialise a linked list of paging objects */
     user_process.paging_objects = malloc(sizeof(list_t));
+    if (!user_process.paging_objects) {
+        ZF_LOGE("Failed to alloc paging objects");
+        return false;
+    }
     list_init(user_process.paging_objects);
 
     /* Initialise a linked list of frame refs */
-    user_process.frame_refs = malloc(sizeof(list_t));
-    list_init(user_process.frame_refs);
+    user_process.page_global_directory = create_pgd();
+    if (!user_process.page_global_directory) {
+        ZF_LOGE("Failed to alloc page global directory");
+        return false;
+    }
 
     /* Initialise a linked list of vm_regions */
     user_process.vm_regions = malloc(sizeof(list_t));
+    if (!user_process.vm_regions) {
+        ZF_LOGE("Failed to alloc vm regions");
+        return false;
+    }
     list_init(user_process.vm_regions);
 
     /* allocate a new slot in the target cspace which we will mint a badged endpoint cap into --
@@ -785,7 +734,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
 
     /* Map in the IPC buffer for the thread */
     err = sos_map_frame(&cspace, NULL_FRAME, user_process.ipc_buffer, user_process.vspace, PROCESS_IPC_BUFFER,
-                    seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process.paging_objects, user_process.frame_refs);
+                    seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
     if (err != 0) {
         ZF_LOGE("Unable to map IPC buffer for user app");
         return false;
