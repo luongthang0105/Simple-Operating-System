@@ -16,7 +16,7 @@
 #include <cspace/cspace.h>
 #include "ut.h"
 #include "frame_table.h"
-
+#include "user_process.h"
 /* TODO: move these data structures to a file called bookkeeping for better clarity. */
 struct paging_object
 {
@@ -24,21 +24,6 @@ struct paging_object
     seL4_CPtr slot;
 };
 
-struct frame_metadata
-{
-    frame_ref_t frame_ref;
-    seL4_Word vaddr;
-    seL4_CPtr frame_cap;
-};
-
-struct vm_region
-{
-    uintptr_t vaddr_base;
-    size_t size;
-    seL4_CapRights_t permission;
-    bool grows_downward;
-};
-typedef struct vm_region vm_region_t;
 typedef struct frame_metadata frame_metadata_t;
 vm_region_t *add_vm_region(list_t *vm_regions, uintptr_t vaddr_base, size_t size, seL4_CapRights_t permission, bool grows_downward);
 /**
@@ -107,7 +92,7 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
  * @return 0 on success
  */
 seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights,
-                         seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs);
+                         seL4_ARM_VMAttributes attr, user_process_t *user_process);
 /*
  * Map a device and return the virtual address it is mapped to.
  *

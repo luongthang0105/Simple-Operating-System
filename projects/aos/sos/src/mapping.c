@@ -17,6 +17,7 @@
 #include "vmem_layout.h"
 #include <utils/list.h>
 #include "frame_table.h"
+#include "pagetable.h"
 /**
  * Retypes and maps a page table into the root servers page global directory
  * @param cspace that the cptrs refer to
@@ -202,7 +203,8 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
 }
 
 seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
-                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, list_t *paging_objects, list_t *frame_refs)
+                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, 
+                     user_process_t *user_process)
 {
     // does not map the first page of the virtual address space
     // This prevents accidental usage of NULL 
@@ -211,13 +213,23 @@ seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr fram
         return seL4_InvalidArgument;
     }
 
-    seL4_Error err = sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, paging_objects);
+    seL4_Error err = sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, user_process->paging_objects);
     if (!err) {
         frame_metadata_t *frame_metadata = malloc(sizeof(frame_metadata_t));
+        if (!frame_metadata) {
+            ZF_LOGE("Failed to allocate memory for frame_metadata");
+            return seL4_NotEnoughMemory;
+        }
+
         frame_metadata->frame_ref = frame_ref;
         frame_metadata->vaddr = vaddr;
         frame_metadata->frame_cap = frame_cap;
-        list_append(frame_refs, frame_metadata);
+
+        int ret = sos_shadow_map_frame(vaddr, frame_metadata, user_process->page_global_directory);
+        if (ret == -1) {
+            ZF_LOGE("Failed to shadow map frame");
+            return seL4_NotEnoughMemory;
+        }
     }
     return err;
 }

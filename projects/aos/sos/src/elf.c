@@ -72,7 +72,7 @@ static inline seL4_CapRights_t get_sel4_rights_from_elf(unsigned long permission
  *
  */
 static int load_segment_into_vspace(cspace_t *cspace, seL4_CPtr loadee, const char *src, size_t segment_size,
-                                    size_t file_size, uintptr_t dst, seL4_CapRights_t permissions, list_t *paging_objects, list_t *frame_refs)
+                                    size_t file_size, uintptr_t dst, seL4_CapRights_t permissions, user_process_t *user_process)
 {
     assert(file_size <= segment_size);
 
@@ -105,7 +105,7 @@ static int load_segment_into_vspace(cspace_t *cspace, seL4_CPtr loadee, const ch
 
         /* map the frame into the loadee address space */
         err = sos_map_frame(cspace, frame, loadee_frame, loadee, loadee_vaddr, permissions,
-                        seL4_ARM_Default_VMAttributes, paging_objects, frame_refs);
+                        seL4_ARM_Default_VMAttributes, user_process);
         if (err != seL4_NoError) {
             cspace_delete(cspace, loadee_frame);
             cspace_free_slot(cspace, loadee_frame);
@@ -192,7 +192,7 @@ int elf_load(cspace_t *cspace, seL4_CPtr loadee_vspace, elf_t *elf_file, user_pr
         /* Copy it across into the vspace. */
         ZF_LOGE(" * Loading segment %p-->%p\n", (void *) vaddr, (void *)(vaddr + segment_size));
         int err = load_segment_into_vspace(cspace, loadee_vspace, source_addr, segment_size, file_size, vaddr,
-            get_sel4_rights_from_elf(flags), user_process->paging_objects, user_process->frame_refs);
+            get_sel4_rights_from_elf(flags), user_process);
             if (err) {
                 ZF_LOGE("Elf loading failed!");
                 return -1;
