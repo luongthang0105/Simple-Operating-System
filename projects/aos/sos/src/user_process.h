@@ -1,6 +1,7 @@
 #pragma once
 #include "ut.h"
-#include "mapping.h"
+#include "pagetable.h"
+
 struct user_process {
     ut_t *tcb_ut;
     seL4_CPtr tcb;
@@ -20,7 +21,7 @@ struct user_process {
     uintptr_t guard_page_vaddr;
 
     list_t *paging_objects;
-    list_t *frame_refs;
+    pgd_t *page_global_directory;    
     list_t *vm_regions;
 
     vm_region_t* heap_region;
