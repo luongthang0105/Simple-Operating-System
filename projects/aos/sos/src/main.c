@@ -255,8 +255,9 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
         uintptr_t next_page_vaddr_to_alloc = ROUND_UP(curr_brk, PAGE_SIZE_4K);
     
         while (next_page_vaddr_to_alloc < new_brk) {
-            int err = allocate_new_frame(&cspace, next_page_vaddr_to_alloc, &user_process);
-            if (err != 0) {
+            int result = allocate_new_frame(&cspace, next_page_vaddr_to_alloc, &user_process);
+            if (result != 0) {
+                ZF_LOGE("Unable to allocate a new frame at %p!\n", next_page_vaddr_to_alloc);
                 seL4_SetMR(0, 0);
                 return;
             }
@@ -361,44 +362,13 @@ void handle_vm_fault(seL4_Fault_t fault, seL4_MessageInfo_t *reply_msg, bool *ha
         return;
     }
     
-    frame_ref_t frame = alloc_frame();
-    if (frame == NULL_FRAME) {
-        ZF_LOGE("Couldn't allocate additional frame");
-        seL4_SetMR(0, 0);
+    int result = allocate_new_frame(&cspace, faultaddr, &user_process);
+    if (result != 0) {
+        ZF_LOGE("Unable to allocate a new frame at %p!\n", faultaddr);
+        *have_reply = false;
         return;
     }
 
-    /* allocate a slot to duplicate the frame cap so we can map it into the application */
-    seL4_CPtr frame_cptr = cspace_alloc_slot(&cspace);
-    if (frame_cptr == seL4_CapNull) {
-        free_frame(frame);
-        ZF_LOGE("Failed to alloc slot for extra frame cap");
-        seL4_SetMR(0, 0);
-        return;
-    }
-
-    /* copy the frame cap into the slot */
-    seL4_Error err = cspace_copy(&cspace, frame_cptr, &cspace, frame_page(frame), seL4_AllRights);
-    if (err != seL4_NoError) {
-        cspace_free_slot(&cspace, frame_cptr);
-        free_frame(frame);
-        ZF_LOGE("Failed to copy cap");
-        seL4_SetMR(0, 0);
-        return;
-    }
-
-    err = sos_map_frame(&cspace, frame, frame_cptr, user_process.vspace, faultaddr, valid_region->permission, seL4_ARM_Default_VMAttributes, &user_process);
-
-    if (err != 0) {
-        cspace_delete(&cspace, frame_cptr);
-        cspace_free_slot(&cspace, frame_cptr);
-        free_frame(frame);
-        ZF_LOGE("Unable to map extra frame for user app");
-        seL4_SetMR(0, 0);
-        return;
-    }
-    printf("Successfully map a frame at %p!\n", faultaddr);
-    // alocate a frame for it
     *have_reply = true;
     seL4_SetMR(0, 0);
     return;
@@ -603,36 +573,9 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     /* Exend the stack with extra pages */
     for (int page = 0; page < 10; page++) {
         stack_bottom -= PAGE_SIZE_4K;
-        frame_ref_t frame = alloc_frame();
-        if (frame == NULL_FRAME) {
-            ZF_LOGE("Couldn't allocate additional stack frame");
-            return 0;
-        }
-
-        /* allocate a slot to duplicate the stack frame cap so we can map it into the application */
-        seL4_CPtr frame_cptr = cspace_alloc_slot(cspace);
-        if (frame_cptr == seL4_CapNull) {
-            free_frame(frame);
-            ZF_LOGE("Failed to alloc slot for stack extra stack frame");
-            return 0;
-        }
-
-        /* copy the stack frame cap into the slot */
-        err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), seL4_AllRights);
-        if (err != seL4_NoError) {
-            cspace_free_slot(cspace, frame_cptr);
-            free_frame(frame);
-            ZF_LOGE("Failed to copy cap");
-            return 0;
-        }
-
-        err = sos_map_frame(cspace, frame, frame_cptr, user_process.vspace, stack_bottom,
-                        seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
-        if (err != 0) {
-            cspace_delete(cspace, frame_cptr);
-            cspace_free_slot(cspace, frame_cptr);
-            free_frame(frame);
-            ZF_LOGE("Unable to map extra stack frame for user app");
+        int result = allocate_new_frame(cspace, stack_bottom, &user_process);
+        if (result != 0) {
+            ZF_LOGE("Unable to allocate a new frame at %p!\n", stack_bottom);
             return 0;
         }
     }

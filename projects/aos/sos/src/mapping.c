@@ -189,7 +189,7 @@ int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_p
     frame_ref_t frame = alloc_frame();
     if (frame == NULL_FRAME) {
         ZF_LOGE("Couldn't allocate additional frame");
-        return - 1;
+        return -1;
     }
 
     /* allocate a slot to duplicate the frame cap so we can map it into the application */
@@ -197,7 +197,7 @@ int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_p
     if (frame_cptr == seL4_CapNull) {
         free_frame(frame);
         ZF_LOGE("Failed to alloc slot for extra frame cap");
-        return - 1;
+        return -1;
     }
 
     /* copy the frame cap into the slot */
@@ -205,8 +205,8 @@ int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_p
     if (err != seL4_NoError) {
         cspace_free_slot(cspace, frame_cptr);
         free_frame(frame);
-        ZF_LOGE("Failed to copy cap");
-        return - 1;
+        ZF_LOGE("Failed to copy cap, seL4_Error = %d\n", err);
+        return -1;
     }
 
     err = sos_map_frame(cspace, frame, frame_cptr, user_process->vspace, vaddr,
@@ -215,9 +215,10 @@ int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_p
         cspace_delete(cspace, frame_cptr);
         cspace_free_slot(cspace, frame_cptr);
         free_frame(frame);
-        ZF_LOGE("Unable to map extra frame for user app");
+        ZF_LOGE("Unable to map extra frame for user app, seL4_Error = %d\n", err);
         return -1;
     }
+
     return 0;
 }
 
