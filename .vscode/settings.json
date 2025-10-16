@@ -11,6 +11,9 @@
         "unistd.h": "c",
         "utils.h": "c",
         "networkconsole.h": "c",
-        "debug.h": "c"
+        "debug.h": "c",
+        "cspace.h": "c",
+        "frame_table.h": "c",
+        "pagetable.h": "c"
     }
 }

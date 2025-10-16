@@ -1,5 +1,6 @@
 #pragma once
 #include "ut.h"
+#include "vm_region.h"
 #include "pagetable.h"
 
 struct user_process {

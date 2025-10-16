@@ -46,6 +46,7 @@
 #include <utils/list.h>
 #include <sossharedapi/syscalls.h>
 #include "user_process.h"
+#include "vm_region.h"
 // #include "syscall_handlers/syscall_handlers.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"

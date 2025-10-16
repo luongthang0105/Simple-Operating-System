@@ -4,15 +4,6 @@
 #include <cspace/cspace.h>
 #include "frame_table.h"
 
-struct vm_region
-{
-    uintptr_t vaddr_base;
-    size_t size;
-    seL4_CapRights_t permission;
-    bool grows_downward;
-};
-typedef struct vm_region vm_region_t;
-
 struct frame_metadata
 {
     frame_ref_t frame_ref;

@@ -273,20 +273,6 @@ seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr fram
     return err;
 }
 
-vm_region_t *add_vm_region(list_t *vm_regions, uintptr_t vaddr_base, size_t size, seL4_CapRights_t permission, bool grows_downward) {
-    vm_region_t *region = malloc(sizeof(vm_region_t));
-    if (region == NULL) {
-        // allocation failed
-        return NULL;
-    }
-    region->vaddr_base = vaddr_base;
-    region->size = size;
-    region->permission = permission;
-    region->grows_downward = grows_downward;
-    list_append(vm_regions, region);
-    return region;
-}
-
 static uintptr_t device_virt = SOS_DEVICE_START;
 
 void *sos_map_device(cspace_t *cspace, uintptr_t addr, size_t size)

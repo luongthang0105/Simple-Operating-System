@@ -67,6 +67,7 @@ add_executable(
     src/threads.c
     src/debugger.c
     src/pagetable.c
+    src/vm_region.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(
