@@ -103,4 +103,4 @@ seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr fram
  * */
 void *sos_map_device(cspace_t *cspace, uintptr_t addr, size_t size);
 
-int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process);
+int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t permission);

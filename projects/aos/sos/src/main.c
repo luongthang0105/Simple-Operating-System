@@ -255,7 +255,7 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
         uintptr_t next_page_vaddr_to_alloc = ROUND_UP(curr_brk, PAGE_SIZE_4K);
     
         while (next_page_vaddr_to_alloc < new_brk) {
-            int result = allocate_new_frame(&cspace, next_page_vaddr_to_alloc, &user_process);
+            int result = allocate_new_frame(&cspace, next_page_vaddr_to_alloc, &user_process, user_process.heap_region->permission);
             if (result != 0) {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", next_page_vaddr_to_alloc);
                 seL4_SetMR(0, 0);
@@ -335,15 +335,24 @@ bool is_in_range(uintptr_t start, uintptr_t end, uintptr_t addr) {
     return start <= addr && addr < end;
 }
 
-vm_region_t* find_valid_region(seL4_Uint64 faultaddr) {
+bool is_write(seL4_Uint64 fsr) { return (fsr & (BIT(6))) != 0; };
+bool is_read(seL4_Uint64 fsr) { return (fsr & (BIT(6))) == 0; };
+bool has_write_perm(seL4_CapRights_t permission) {
+    return permission.words[0] & seL4_CanWrite.words[0];
+}
+bool has_read_perm(seL4_CapRights_t permission) {
+    return permission.words[0] & seL4_CanRead.words[0];
+}
+vm_region_t* find_valid_region(seL4_Uint64 faultaddr, seL4_Uint64 fsr) {
     for (struct list_node *cur = user_process.vm_regions->head; cur != NULL; cur = cur->next ) {
         vm_region_t *vm_region = (vm_region_t *)cur->data;
         uintptr_t region_start = vm_region->vaddr_base;
         uintptr_t region_end;
         if (vm_region->grows_downward) {
             region_end = region_start - vm_region->size;
-            printf("region start: %p, region end: %p\n", region_start, region_end);
-            if (is_in_range(region_end, region_start, faultaddr)) return vm_region;
+            if (is_in_range(region_end, region_start, faultaddr) &&
+               (is_write(fsr) && has_write_perm(vm_region->permission)) || (is_read(fsr) && has_read_perm(vm_region->permission))
+            ) return vm_region;
         } else {
             region_end = region_start + vm_region->size;
             if (is_in_range(region_start, region_end, faultaddr)) return vm_region;
@@ -354,15 +363,16 @@ vm_region_t* find_valid_region(seL4_Uint64 faultaddr) {
 
 void handle_vm_fault(seL4_Fault_t fault, seL4_MessageInfo_t *reply_msg, bool *have_reply) {
     seL4_Uint64 faultaddr = ROUND_DOWN(seL4_Fault_VMFault_get_Addr(fault), PAGE_SIZE_4K);
+    seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-    vm_region_t *valid_region = find_valid_region(faultaddr);
+    vm_region_t *valid_region = find_valid_region(faultaddr, fsr);
     if (valid_region == NULL) {
         ZF_LOGE("Fault address %p resolves to an invalid region access", faultaddr);
         *have_reply = false; // don't reply to the user process if the fault vaddr is invalid
         return;
     }
     
-    int result = allocate_new_frame(&cspace, faultaddr, &user_process);
+    int result = allocate_new_frame(&cspace, faultaddr, &user_process, valid_region->permission);
     if (result != 0) {
         ZF_LOGE("Unable to allocate a new frame at %p!\n", faultaddr);
         *have_reply = false;
@@ -573,7 +583,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     /* Exend the stack with extra pages */
     for (int page = 0; page < 10; page++) {
         stack_bottom -= PAGE_SIZE_4K;
-        int result = allocate_new_frame(cspace, stack_bottom, &user_process);
+        int result = allocate_new_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
         if (result != 0) {
             ZF_LOGE("Unable to allocate a new frame at %p!\n", stack_bottom);
             return 0;

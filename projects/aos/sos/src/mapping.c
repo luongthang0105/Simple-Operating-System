@@ -185,7 +185,7 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
     return err;
 }
 
-int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process) {
+int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t permission) {
     frame_ref_t frame = alloc_frame();
     if (frame == NULL_FRAME) {
         ZF_LOGE("Couldn't allocate additional frame");
@@ -201,7 +201,7 @@ int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_p
     }
 
     /* copy the frame cap into the slot */
-    seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), seL4_AllRights);
+    seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), permission);
     if (err != seL4_NoError) {
         cspace_free_slot(cspace, frame_cptr);
         free_frame(frame);
