@@ -237,19 +237,19 @@ frame_metadata_t *find_frame(uintptr_t vaddr, pgd_t *pgd) {
     pud_t* pud = pgd->page_upper_directories[pgd_index];
     if (!pud) {
         ZF_LOGE("%s does not exist", PAGE_UPPER_DIRECTORY_NAME);
-        return -1;
+        return NULL;
     }
 
     pd_t* pd = pud->page_directories[pud_index];
     if (!pd) {
         ZF_LOGE("%s does not exist", PAGE_DIRECTORY_NAME);
-        return -1;
+        return NULL;
     }
 
     pt_t* pt = pd->page_tables[pd_index];
     if (!pt) {
         ZF_LOGE("%s does not exist", PAGE_TABLE_NAME);
-        return -1;
+        return NULL;
     }
 
     return pt->frame_metadatas[pt_index];
