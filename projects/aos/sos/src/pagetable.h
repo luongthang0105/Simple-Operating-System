@@ -3,6 +3,7 @@
 #define TABLE_SIZE_BITS (1<<9)
 #include <cspace/cspace.h>
 #include "frame_table.h"
+#include "user_process.h"
 
 struct vm_region
 {
@@ -23,16 +24,25 @@ typedef struct frame_metadata frame_metadata_t;
 
 struct page_table {
     frame_metadata_t *frame_metadatas[TABLE_SIZE_BITS];
+
+    ut_t *ut;
+    seL4_CPtr slot;
 };
 typedef struct page_table pt_t;
 
 struct page_directory {
     pt_t *page_tables[TABLE_SIZE_BITS];
+
+    ut_t *ut;
+    seL4_CPtr slot;
 };
 typedef struct page_directory pd_t;
 
 struct page_upper_directory {
     pd_t *page_directories[TABLE_SIZE_BITS];
+    
+    ut_t *ut;
+    seL4_CPtr slot;
 };
 typedef struct page_upper_directory pud_t;
 
@@ -41,8 +51,15 @@ struct page_global_directory {
 };
 typedef struct page_global_directory pgd_t;
 
-/* Returns 0 on success. If malloc fails (due to out of memory), returns -1. */
-int sos_shadow_map_frame(uintptr_t vaddr, frame_metadata_t *frame_metadata, pgd_t *pgd);
+/* Returns 0 on success. Otherwise, returns -1. */
+int sos_shadow_map_frame(   
+    uintptr_t vaddr, 
+    frame_metadata_t *frame_metadata, 
+    cspace_t *cspace,
+    user_process_t *user_process,
+    seL4_CapRights_t rights, 
+    seL4_ARM_VMAttributes attr
+);
 
 /* Returns 0 on success. Returns -1 if failed. */
 int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace);

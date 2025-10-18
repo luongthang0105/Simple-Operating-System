@@ -74,64 +74,7 @@ static seL4_Error retype_map_pud(cspace_t *cspace, seL4_CPtr vspace, seL4_Word v
     }
     return seL4_ARM_PageUpperDirectory_Map(empty, vspace, vaddr, seL4_ARM_Default_VMAttributes);
 }
-static seL4_Error sos_map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
-                                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr,
-                                     seL4_CPtr *free_slots, seL4_Word *used, list_t *paging_objects)
-{
-    /* Attempt the mapping */
-    seL4_Error err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
-    for (size_t i = 0; i < MAPPING_SLOTS && err == seL4_FailedLookup; i++) {
-        /* save this so nothing else trashes the message register value */
-        seL4_Word failed = seL4_MappingFailedLookupLevel();
 
-        /* Assume the error was because we are missing a paging structure */
-        ut_t *ut = ut_alloc_4k_untyped(NULL);
-        if (ut == NULL) {
-            ZF_LOGE("Out of 4k untyped");
-            return -1;
-        }
-
-        /* figure out which cptr to use to retype into*/
-        seL4_CPtr slot;
-        if (used != NULL) {
-            slot = free_slots[i];
-            *used |= BIT(i);
-        } else {
-            slot = cspace_alloc_slot(cspace);
-        }
-
-        if (slot == seL4_CapNull) {
-            ZF_LOGE("No cptr to alloc paging structure");
-            return -1;
-        }
-
-        switch (failed) {
-        case SEL4_MAPPING_LOOKUP_NO_PT:
-            err = retype_map_pt(cspace, vspace, vaddr, ut->cap, slot);
-            break;
-        case SEL4_MAPPING_LOOKUP_NO_PD:
-            err = retype_map_pd(cspace, vspace, vaddr, ut->cap, slot);
-            break;
-
-        case SEL4_MAPPING_LOOKUP_NO_PUD:
-            err = retype_map_pud(cspace, vspace, vaddr, ut->cap, slot);
-            break;
-        }
-
-        if (!err) {
-            /* Try the mapping again */
-            err = seL4_ARM_Page_Map(frame_cap, vspace, vaddr, rights, attr);
-
-            /* Record the paging object within the process itself */
-            struct paging_object *paging_object = malloc(sizeof(struct paging_object));
-            paging_object->ut = ut;
-            paging_object->slot = slot;
-            list_append(paging_objects, paging_object);
-        }
-    }
-
-    return err;
-}
 static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
                                  seL4_CapRights_t rights, seL4_ARM_VMAttributes attr,
                                  seL4_CPtr *free_slots, seL4_Word *used)
@@ -202,38 +145,36 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
     return map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL);
 }
 
-seL4_Error sos_map_frame(cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, seL4_CPtr vspace, seL4_Word vaddr,
-                     seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, 
-                     user_process_t *user_process)
+int sos_map_frame(
+    cspace_t *cspace, frame_ref_t frame_ref, seL4_CPtr frame_cap, 
+    seL4_CPtr vspace, seL4_Word vaddr,
+    seL4_CapRights_t rights, seL4_ARM_VMAttributes attr, 
+    user_process_t *user_process)
 {
     // does not map the first page of the virtual address space
     // This prevents accidental usage of NULL 
     if (vaddr < PAGE_SIZE_4K) {
         ZF_LOGE("vaddr must not be within the first page of the virtual address space");
-        return seL4_InvalidArgument;
+        return -1;
     }
 
-    seL4_Error err = sos_map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL, user_process->paging_objects);
-    if (!err) {
-        frame_metadata_t *frame_metadata = malloc(sizeof(frame_metadata_t));
-        if (!frame_metadata) {
-            ZF_LOGE("Failed to allocate memory for frame_metadata");
-            return seL4_NotEnoughMemory;
-        }
-
-        frame_metadata->frame_ref = frame_ref;
-        frame_metadata->vaddr = vaddr;
-        frame_metadata->frame_cap = frame_cap;
-
-        int ret = sos_shadow_map_frame(vaddr, frame_metadata, user_process->page_global_directory);
-        if (ret == -1) {
-            ZF_LOGE("Failed to shadow map frame");
-            return seL4_NotEnoughMemory;
-        }
-    } else {
-        ZF_LOGE("Error from sos_map_frame_impl: %lu\n", err);
+    frame_metadata_t *frame_metadata = malloc(sizeof(frame_metadata_t));
+    if (!frame_metadata) {
+        ZF_LOGE("Failed to allocate memory for frame_metadata");
+        return -1;
     }
-    return err;
+
+    frame_metadata->frame_ref = frame_ref;
+    frame_metadata->vaddr = vaddr;
+    frame_metadata->frame_cap = frame_cap;
+
+    int ret = sos_shadow_map_frame(vaddr, frame_metadata, cspace, user_process, rights, attr);
+    if (ret == -1) {
+        ZF_LOGE("Failed to shadow map frame");
+        return -1;
+    }
+
+    return 0;
 }
 
 vm_region_t *add_vm_region(list_t *vm_regions, uintptr_t vaddr_base, size_t size, seL4_CapRights_t permission, bool grows_downward) {
