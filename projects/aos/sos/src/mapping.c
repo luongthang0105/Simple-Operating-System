@@ -125,8 +125,26 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
 
     return err;
 }
+static seL4_Error sos_map_frame(
+    cspace_t *cspace, 
+    frame_metadata_t *frame_metadata,
+    seL4_Word vaddr,
+    seL4_CapRights_t rights, 
+    seL4_ARM_VMAttributes attr, 
+    user_process_t *user_process
+)
+{
+    // does not map the first page of the virtual address space
+    // This prevents accidental usage of NULL 
+    if (vaddr < PAGE_SIZE_4K) {
+        ZF_LOGE("vaddr must not be within the first page of the virtual address space");
+        return seL4_InvalidArgument;
+    }
 
-int allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t permission) {
+    return sos_shadow_map_frame(vaddr, frame_metadata, cspace, user_process, rights, attr);
+}
+
+seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t permission) {
     frame_ref_t frame = alloc_frame();
     if (frame == NULL_FRAME) {
         ZF_LOGE("Couldn't allocate additional frame");
