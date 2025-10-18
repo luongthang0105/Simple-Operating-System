@@ -11,7 +11,6 @@ struct user_process {
     ut_t *vspace_ut;
     seL4_CPtr vspace;
 
-    ut_t *ipc_buffer_ut;
     seL4_CPtr ipc_buffer;
 
     ut_t *sched_context_ut;

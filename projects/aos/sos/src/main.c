@@ -447,37 +447,10 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         return 0;
     }
 
-    // TODO: PUT THESE THINGS INTO A HELPER FUNCTION PLS
-    frame_ref_t frame = alloc_frame();
-    if (frame == NULL_FRAME) {
-        ZF_LOGE("Couldn't allocate additional stack frame");
-        return 0;
-    }
-
-    /* allocate a slot to duplicate the stack frame cap so we can map it into the application */
-    user_process.stack = cspace_alloc_slot(cspace);
-    if (user_process.stack == seL4_CapNull) {
-        free_frame(frame);
-        ZF_LOGE("Failed to alloc slot for stack extra stack frame");
-        return 0;
-    }
-
-    /* copy the stack frame cap into the slot */
-    seL4_Error err = cspace_copy(cspace, user_process.stack, cspace, frame_page(frame), seL4_AllRights);
-    if (err != seL4_NoError) {
-        cspace_free_slot(cspace, user_process.stack);
-        free_frame(frame);
-        ZF_LOGE("Failed to copy cap");
-        return 0;
-    }
-
-    /* Map in the stack frame for the user app */
-    err = sos_map_frame(cspace, frame, user_process.stack, user_process.vspace, stack_bottom,
-                               seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
-    if (err != 0) {
-        ZF_LOGE("Unable to map stack for user app");
-        return 0;
-    }
+    /* allocate a stack frame for the user application*/
+    seL4_Error err = allocate_new_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
+    frame_metadata_t *frame_metadata = find_frame(stack_bottom, user_process.page_global_directory);
+    user_process.stack = frame_metadata->frame_cap;
 
     /* allocate a slot to duplicate the stack frame cap so we can map it into our address space */
     seL4_CPtr local_stack_cptr = cspace_alloc_slot(cspace);
@@ -622,6 +595,24 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
     list_init(user_process.vm_regions);
 
+    /* Create an IPC buffer */
+    err = allocate_new_frame(&cspace, PROCESS_IPC_BUFFER, &user_process, seL4_AllRights);
+    if (err != 0) {
+        ZF_LOGE("Unable to map IPC buffer for user app");
+        return false;
+    }
+
+    /* Keep track of IPC buffer region */
+    vm_region_t *ipc_region = add_vm_region(user_process.vm_regions, PROCESS_IPC_BUFFER, PAGE_SIZE_4K, seL4_AllRights, false);
+    if (ipc_region == NULL) {
+        ZF_LOGE("Unable to add ipc region");
+        return false;
+    }
+
+    /* Saves the IPC buffer capability */
+    frame_metadata_t *frame_metadata = find_frame(PROCESS_IPC_BUFFER, user_process.page_global_directory);
+    user_process.ipc_buffer = frame_metadata->frame_cap;
+
     /* allocate a new slot in the target cspace which we will mint a badged endpoint cap into --
      * the badge is used to identify the process, which will come in handy when you have multiple
      * processes. */
@@ -707,21 +698,6 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     err = elf_load(&cspace, user_process.vspace, &elf_file, &user_process);
     if (err) {
         ZF_LOGE("Failed to load elf image");
-        return false;
-    }
-
-    /* Map in the IPC buffer for the thread */
-    err = sos_map_frame(&cspace, NULL_FRAME, user_process.ipc_buffer, user_process.vspace, PROCESS_IPC_BUFFER,
-                    seL4_AllRights, seL4_ARM_Default_VMAttributes, &user_process);
-    if (err != 0) {
-        ZF_LOGE("Unable to map IPC buffer for user app");
-        return false;
-    }
-
-    /* Keep track of IPC buffer region */
-    vm_region_t *ipc_region = add_vm_region(user_process.vm_regions, PROCESS_IPC_BUFFER, PAGE_SIZE_4K, seL4_ReadWrite, false);
-    if (ipc_region == NULL) {
-        ZF_LOGE("Unable to add ipc region");
         return false;
     }
 
