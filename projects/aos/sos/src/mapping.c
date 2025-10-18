@@ -13,11 +13,9 @@
 #include <sel4/sel4_arch/mapping.h>
 
 #include "mapping.h"
-#include "ut.h"
 #include "vmem_layout.h"
 #include <utils/list.h>
-#include "frame_table.h"
-#include "pagetable.h"
+
 /**
  * Retypes and maps a page table into the root servers page global directory
  * @param cspace that the cptrs refer to
@@ -198,7 +196,7 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
     return map_frame_impl(cspace, frame_cap, vspace, vaddr, rights, attr, NULL, NULL);
 }
 
-static int sos_map_frame(
+int sos_map_frame(
     cspace_t *cspace, 
     frame_metadata_t *frame_metadata,
     seL4_Word vaddr,

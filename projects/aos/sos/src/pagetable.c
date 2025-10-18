@@ -174,6 +174,10 @@ int sos_shadow_map_frame(
     }
 
     seL4_Error err = seL4_ARM_Page_Map(frame_metadata->frame_cap, user_process->vspace, vaddr, rights, attr);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Unable to perform page map. seL4_Error = %d", err);
+        return -1;
+    }
     pt->frame_metadatas[pt_index] = frame_metadata;
     return 0;
 }
@@ -207,7 +211,7 @@ int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace) {
     pt->frame_metadatas[pt_index] = NULL;
 
     if (!frame) {
-        ZF_LOGE("Unable to find the mapped page at vaddr=%p", vaddr);
+        ZF_LOGE("Unable to find the mapped page at vaddr=%p", (void*)vaddr);
         return -1;
     }
 
