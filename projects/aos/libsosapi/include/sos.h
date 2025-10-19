@@ -17,6 +17,8 @@
 #include <stdint.h>
 #include <sel4/sel4.h>
 #include <sossharedapi/syscalls.h>
+#include <sossharedapi/vfs.h>
+
 
 /* System calls for SOS */
 
@@ -29,32 +31,6 @@
 #define MAX_IO_BUF 0x1000
 #define N_NAME 32
 
-/* file modes */
-#define FM_EXEC  1
-#define FM_WRITE 2
-#define FM_READ  4
-typedef int fmode_t;
-
-/* file mode checks */
-#define HAS_FM_READ(x)      ((x >> 2) & 1)
-#define HAS_FM_WRITE(x)     ((x >> 1) & 1)
-#define HAS_FM_EXEC(x)      (x & 1)
-
-/* stat file types */
-#define ST_FILE    1    /* plain file */
-#define ST_SPECIAL 2    /* special (console) file */
-typedef int st_type_t;
-
-#define CONSOLE_FD 3    /* File descriptors 0,1,2 are already reserved for stdin, stdout and stderr */
-
-typedef struct {
-    st_type_t st_type;    /* file type */
-    fmode_t   st_fmode;   /* access mode */
-    unsigned  st_size;    /* file size in bytes */
-    long      st_ctime;   /* Unix file creation time (ms) */
-    long      st_atime;   /* Unix file last access (open) time (ms) */
-} sos_stat_t;
-
 typedef int pid_t;
 
 typedef struct {
@@ -63,10 +39,9 @@ typedef struct {
     unsigned  stime;           /* start time in msec since booting */
     char      command[N_NAME]; /* Name of exectuable */
 } sos_process_t;
-
 /* I/O system calls */
 
-int sos_open(const char *path, fmode_t mode);
+int sos_open(const char *path, int flags);
 /* Open file and return file descriptor, -1 if unsuccessful
  * (too many open files, console already open for reading).
  * A new file should be created if 'path' does not already exist.

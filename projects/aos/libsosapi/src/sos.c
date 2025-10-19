@@ -17,14 +17,7 @@
 #include <stdbool.h>
 #include <sel4/sel4.h>
 #include <fcntl.h>
-
-#define MAX_NUM_FILES 10
-struct file_status {
-    fmode_t mode;
-    bool is_opened;
-}
-/* file descriptor number is used to index to the array */
-static file_status[MAX_NUM_FILES];
+#include <nfsc/libnfs.h>
 
 static size_t sos_debug_print(const void *vData, size_t count)
 {
@@ -39,9 +32,10 @@ static size_t sos_debug_print(const void *vData, size_t count)
 }
 
 // currently does not check for PROCESS_MAX_FILES opened
-int sos_open(const char *path, fmode_t mode)
+int sos_open(const char *path, int flag)
 {
-    switch (mode)
+    fmode_t mode;
+    switch (flag)
     {
         case O_RDONLY:
             mode = FM_READ;
@@ -58,19 +52,19 @@ int sos_open(const char *path, fmode_t mode)
     }   
 
     if (strcmp(path, "console") == 0) {
-        struct file_status *console = &file_status[CONSOLE_FD];
+        sos_fd_t *console = &sos_fd_table[CONSOLE_FD];
         if (console->is_opened) {
             if (HAS_FM_READ(console->mode) && HAS_FM_READ(mode)) {
                 return -1; // Only one reader at a time!
             }
-        } 
+        }
 
         console->is_opened = true;
         console->mode |= mode;
 
         return CONSOLE_FD;
     }
-
+    // int result = nfs_open_async(nfs_context, path, flag, cb, private_data);
     return -1;
 }
 
@@ -82,7 +76,7 @@ int sos_close(int file)
 
 int sos_read(int file, char *buf, size_t nbyte)
 {   
-    struct file_status *cur_file = &file_status[file];
+    sos_fd_t *cur_file = &sos_fd_table[file];
 
     // check invalid file
     if (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_READ(cur_file->mode)) {
@@ -101,7 +95,7 @@ int sos_read(int file, char *buf, size_t nbyte)
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    struct file_status *cur_file = &file_status[file];
+    sos_fd_t *cur_file = &sos_fd_table[file];
 
     /* currently there's no a proper way to initialise the file status of files 
      * with descriptors 0, 1, 2 (stdin, stdout, stderr), so to enable printf, we only
