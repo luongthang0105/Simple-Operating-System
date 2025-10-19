@@ -24,8 +24,7 @@
 #define _LIBNFS_H_
 
 #include <stdint.h>
-#if defined(__ANDROID__) || defined(AROS) \
- || ( defined(__APPLE__) && defined(__MACH__) )
+#if !defined(_WIN32)
 #include <sys/time.h>
 #else
 #include <time.h>
