@@ -13,6 +13,7 @@
 
 #include <sel4/types.h>
 #include <cspace/cspace.h>
+#include <nfsc/libnfs.h>
 
 /**
  * Initialises the network stack

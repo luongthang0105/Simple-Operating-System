@@ -39,8 +39,6 @@
 
 #include <ethernet/ethernet.h>
 
-#include <nfsc/libnfs.h>
-
 #include "vmem_layout.h"
 #include "dma.h"
 #include "mapping.h"
