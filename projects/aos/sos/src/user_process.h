@@ -2,6 +2,7 @@
 #include "ut.h"
 #include "vm_region.h"
 #include <nfsc/libnfs.h>
+#include <sossharedapi/vfs.h>
 
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
@@ -33,5 +34,7 @@ struct user_process {
     /* main thread running the callback will assign a (struct nfsdir*) to this variable, 
     so worker thread can use this*/ 
     struct nfsdir* curr_dir; 
+
+    vfs_t* vfs;
 };
 typedef struct user_process user_process_t;

@@ -51,32 +51,14 @@ int sos_open(const char *path, int flag)
             break;
     }   
 
-    if (strcmp(path, "console") == 0) {
-        sos_fd_t *console = &vfs.sos_fd_table[CONSOLE_FD];
-        if (console->is_opened) {
-            if (HAS_FM_READ(console->mode) && HAS_FM_READ(mode)) {
-                return -1; // Only one reader at a time!
-            }
-        }
-        console->is_opened = true;
-        console->mode |= mode;
-        return CONSOLE_FD;
-    }
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_OPEN);
+    seL4_SetMR(1, path);
+    seL4_SetMR(2, flag);
+    seL4_SetMR(3, mode);
 
-    
-    int fd = find_next_fd();
-    
-    if (fd >= MAX_NUM_FILES) {
-        return -1;
-    }
-    
-    sos_fd_t *sos_fd = &vfs.sos_fd_table[fd];
-    sos_fd->is_opened = true;
-    sos_fd->path = path;
-    sos_fd->mode |= mode;
-
-    // int result = nfs_open_async(nfs_context, path, flag, cb, private_data);
-    return fd;
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+   return seL4_GetMR(0);
 }
 
 int sos_close(int file)
@@ -87,42 +69,44 @@ int sos_close(int file)
 
 int sos_read(int file, char *buf, size_t nbyte)
 {   
-    sos_fd_t *cur_file = &vfs.sos_fd_table[file];
+    // sos_fd_t *cur_file = &vfs.sos_fd_table[file];
 
-    // check invalid file
-    if (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_READ(cur_file->mode)) {
-        return -1;
-    }
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
-    seL4_SetMR(0, SYSCALL_SOS_READ); 
-    seL4_SetMR(1, file);
-    seL4_SetMR(2, buf);
-    seL4_SetMR(3, nbyte);
+    // // check invalid file
+    // if (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_READ(cur_file->mode)) {
+    //     return -1;
+    // }
+    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    // seL4_SetMR(0, SYSCALL_SOS_READ); 
+    // seL4_SetMR(1, file);
+    // seL4_SetMR(2, buf);
+    // seL4_SetMR(3, nbyte);
 
-    seL4_Call(SOS_IPC_EP_CAP, tag);
-    seL4_Word num_byte_read = seL4_GetMR(0);
-    return num_byte_read;
+    // seL4_Call(SOS_IPC_EP_CAP, tag);
+    // seL4_Word num_byte_read = seL4_GetMR(0);
+    // return num_byte_read;
+    return -1;
 }
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    sos_fd_t *cur_file = &vfs.sos_fd_table[file];
+    // sos_fd_t *cur_file = &vfs.sos_fd_table[file];
 
-    /* currently there's no a proper way to initialise the file status of files 
-     * with descriptors 0, 1, 2 (stdin, stdout, stderr), so to enable printf, we only
-     * check the valid file status for other files > 2
-    */
-    if (file > 2 && (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_WRITE(cur_file->mode))) return -1;
+    // /* currently there's no a proper way to initialise the file status of files 
+    //  * with descriptors 0, 1, 2 (stdin, stdout, stderr), so to enable printf, we only
+    //  * check the valid file status for other files > 2
+    // */
+    // if (file > 2 && (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_WRITE(cur_file->mode))) return -1;
     
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
-    seL4_SetMR(0, SYSCALL_SOS_WRITE); 
-    seL4_SetMR(1, buf);
-    // printf("sending nbytes: %d\n", nbyte);
-    seL4_SetMR(2, nbyte);
-    seL4_SetMR(3, file);
-    seL4_Call(SOS_IPC_EP_CAP, tag);
+    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    // seL4_SetMR(0, SYSCALL_SOS_WRITE); 
+    // seL4_SetMR(1, buf);
+    // // printf("sending nbytes: %d\n", nbyte);
+    // seL4_SetMR(2, nbyte);
+    // seL4_SetMR(3, file);
+    // seL4_Call(SOS_IPC_EP_CAP, tag);
 
-    return seL4_GetMR(0);
+    // return seL4_GetMR(0);
+    return -1;
 }
 
 int sos_getdirent(int pos, char *name, size_t nbyte)

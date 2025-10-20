@@ -1,7 +1,8 @@
 
 #pragma once
-#include <sossharedapi/vfs.h>
 #include <stdbool.h>
+#include <nfsc/libnfs.h>
+
 /* file modes */
 #define FM_EXEC  1
 #define FM_WRITE 2
@@ -33,13 +34,13 @@ typedef struct {
     fmode_t mode;
     bool is_opened;
     char *path;
+    struct nfsfh* fh;
 } sos_fd_t;
 
 typedef struct {
-    sos_fd_t sos_fd_table[MAX_NUM_FILES];
+    sos_fd_t fd_table[MAX_NUM_FILES];
 } vfs_t;
 
 /* file descriptor number is used to index to the array */
-static vfs_t vfs;
-void vfs_init();
-int find_next_fd();
+void vfs_init(vfs_t *vfs);
+int find_next_fd(vfs_t *vfs);

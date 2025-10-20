@@ -261,3 +261,13 @@ frame_metadata_t *find_frame(uintptr_t vaddr, pgd_t *pgd) {
 
     return pt->frame_metadatas[pt_index];
 }
+
+unsigned char* find_frame_data(uintptr_t vaddr, pgd_t *pgd) {
+    // find the frame associated with this buf_vaddr
+    frame_metadata_t *frame = find_frame(vaddr, pgd);
+    if (!frame) {
+        ZF_LOGE("page not found for vaddr=%p\n", (void*)vaddr);
+        return NULL;
+    }
+    return frame_data(frame->frame_ref);
+}

@@ -26,5 +26,4 @@
  *                       and has a completely different programming model!)
  */
 void network_init(cspace_t *cspace, void *timer_vaddr, seL4_CPtr irq_ntfn);
-
-struct nfs_context* get_nfs_context();
+struct nfs_context *get_nfs_context();

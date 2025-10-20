@@ -55,4 +55,4 @@ int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace);
 
 pgd_t *create_pgd();
 frame_metadata_t *find_frame(uintptr_t vaddr, pgd_t *pgd);
-
+unsigned char* find_frame_data(uintptr_t vaddr, pgd_t *pgd);

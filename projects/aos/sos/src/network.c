@@ -10,7 +10,6 @@
  * @TAG(DATA61_GPL)
  */
 #include "network.h"
-
 #include <autoconf.h>
 #include <sos/gen_config.h>
 #include <assert.h>
@@ -69,6 +68,10 @@ static char nfs_dir_buf[PATH_MAX];
 static uint8_t ip_octet;
 
 static void nfs_mount_cb(int status, struct nfs_context *nfs, void *data, void *private_data);
+
+struct nfs_context *get_nfs_context() {
+    return nfs;
+}
 
 static int pico_eth_send(UNUSED struct pico_device *dev, void *input_buf, int len)
 {
