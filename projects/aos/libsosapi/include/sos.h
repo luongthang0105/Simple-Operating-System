@@ -27,7 +27,6 @@
 #define TIMER_IPC_EP_CAP   (0x2)
 
 /* Limits */
-#define PROCESS_MAX_FILES 16
 #define MAX_IO_BUF 0x1000
 #define N_NAME 32
 

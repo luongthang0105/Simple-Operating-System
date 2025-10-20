@@ -20,7 +20,8 @@ typedef int fmode_t;
 typedef int st_type_t;
 
 #define CONSOLE_FD 3    /* File descriptors 0,1,2 are already reserved for stdin, stdout and stderr */
-#define MAX_NUM_FILES 16
+#define PROCESS_MAX_FILES 16
+
 typedef struct {
     st_type_t st_type;    /* file type */
     fmode_t   st_fmode;   /* access mode */
@@ -37,7 +38,7 @@ typedef struct {
 } sos_fd_t;
 
 typedef struct {
-    sos_fd_t fd_table[MAX_NUM_FILES];
+    sos_fd_t fd_table[PROCESS_MAX_FILES];
 } vfs_t;
 
 /* file descriptor number is used to index to the array */

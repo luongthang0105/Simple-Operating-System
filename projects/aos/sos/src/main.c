@@ -237,8 +237,8 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
 
     int fd = find_next_fd(user_process.vfs);
 
-    if (fd >= MAX_NUM_FILES) {
-        ZF_LOGE("Unable to allocate a new file descriptor since the number of open files exceeded %d\n", MAX_NUM_FILES);
+    if (fd >= PROCESS_MAX_FILES) {
+        ZF_LOGE("Unable to allocate a new file descriptor since the number of open files exceeded %d\n", PROCESS_MAX_FILES);
         free(temp_path_buf);
         seL4_SetMR(0, -1);
         return;
@@ -266,7 +266,7 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     user_process.vfs->fd_table[fd].path = temp_path_buf;
     
     free(private_data);
-    seL4_SetMR(0, private_data->fd);
+    seL4_SetMR(0, fd);
 }
 
 void handler_sos_write(seL4_MessageInfo_t *reply_msg) {
