@@ -117,6 +117,62 @@ struct network_console *network_console;
 #define MAX_WORKER_THREADS  1
 static sos_thread_t* worker_threads[MAX_WORKER_THREADS];
 
+/* Copy data from user app to SOS. Returns number of bytes that could not be copied. On success, this will be zero. */
+static size_t copy_from_user(void* to, const void* from, size_t nbyte) {
+    size_t rem_bytes = MIN(nbyte, strlen((const char*)from));
+    size_t bytes_copied = 0;
+    uintptr_t from_vaddr = (uintptr_t) from;
+    while (rem_bytes > 0) {
+        frame_metadata_t *frame = find_frame(from_vaddr, user_process.page_global_directory);
+        if (!frame) {
+            ZF_LOGE("Unable to find a frame for buf_vaddr at %p", from_vaddr);
+            return nbyte - bytes_copied;
+        }
+
+        // source data of the "from" buf
+        unsigned char* source_data = frame_data(frame->frame_ref);
+
+        size_t offset = from_vaddr % PAGE_SIZE_4K;
+        size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
+        size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
+        
+        strncpy(&source_data[offset], &to[bytes_copied], bytes_to_copy);
+
+        rem_bytes -= bytes_to_copy;
+        from_vaddr += bytes_to_copy;
+        bytes_copied += bytes_to_copy;
+    }
+    return nbyte;
+}
+
+
+/* Copy data from SOS to user app. Returns number of bytes that could not be copied. On success, this will be zero. */
+static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
+    size_t rem_bytes = MIN(nbyte, strlen((const char*)to));
+    size_t bytes_copied = 0;
+    uintptr_t to_vaddr = (uintptr_t) to;
+    while (rem_bytes > 0) {
+        frame_metadata_t *frame = find_frame(to_vaddr, user_process.page_global_directory);
+        if (!frame) {
+            ZF_LOGE("Unable to find a frame for buf_vaddr at %p", to_vaddr);
+            return nbyte - bytes_copied;
+        }
+        
+        // source data of the "to" buf
+        unsigned char* source_data = frame_data(frame->frame_ref);
+
+        size_t offset = to_vaddr % PAGE_SIZE_4K;
+        size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
+        size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
+        
+        strncpy(&from[bytes_copied], &source_data[offset], bytes_to_copy);
+
+        rem_bytes -= bytes_to_copy;
+        to_vaddr += bytes_to_copy;
+        bytes_copied += bytes_to_copy;
+    }
+    return nbyte;
+}
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
     struct callback_private_data *ret_private_data =  (struct callback_private_data *)private_data;
    
@@ -375,7 +431,7 @@ void handler_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index) {
     ZF_LOGV("syscall: getdirent!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
    
-    int pos = seL4_GetMR(2);
+    size_t pos = seL4_GetMR(2);
     uintptr_t buf_vaddr = seL4_GetMR(3);
     size_t nbyte = seL4_GetMR(4);
 
@@ -406,33 +462,11 @@ void handler_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index) {
             }
         }
     }
-
     // gets the name field, and copy it to the name buf
-    char *file_name = nfsdirent->name;
+    size_t rem_bytes = copy_to_user((void*) buf_vaddr, (void*)nfsdirent->name, nbyte);
 
-    size_t rem_bytes = MIN(nbyte, strlen(file_name));
-    size_t bytes_copied = 0;
-    while (rem_bytes > 0) {
-        frame_metadata_t *frame = find_frame(buf_vaddr, user_process.page_global_directory);
-        if (!frame) {
-            ZF_LOGE("Unable to find a frame for buf_vaddr at %p", (void*)buf_vaddr);
-            seL4_SetMR(0, -1);
-            return;
-        }
-        unsigned char* data = frame_data(frame->frame_ref);
-
-        size_t offset = buf_vaddr % PAGE_SIZE_4K;
-        size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
-        size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
-        
-        strncpy(data, &file_name[bytes_copied], bytes_to_copy);
-
-        rem_bytes -= bytes_to_copy;
-        buf_vaddr += bytes_to_copy;
-        bytes_copied += bytes_to_copy;
-    }
-
-    return bytes_copied;
+    seL4_SetMR(0, nbyte - rem_bytes);
+    return;
 }
 
 /**
