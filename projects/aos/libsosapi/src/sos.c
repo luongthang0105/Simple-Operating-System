@@ -51,11 +51,12 @@ int sos_open(const char *path, int flag)
             break;
     }   
 
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 5);
     seL4_SetMR(0, SYSCALL_SOS_OPEN);
     seL4_SetMR(1, path);
-    seL4_SetMR(2, flag);
-    seL4_SetMR(3, mode);
+    seL4_SetMR(2, strlen(path));
+    seL4_SetMR(3, flag);
+    seL4_SetMR(4, mode);
 
     seL4_Call(SOS_IPC_EP_CAP, tag);
    return seL4_GetMR(0);

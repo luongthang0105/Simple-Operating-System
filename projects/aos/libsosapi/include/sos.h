@@ -41,7 +41,7 @@ typedef struct {
 } sos_process_t;
 /* I/O system calls */
 
-int sos_open(const char *path, int flags);
+int sos_open(const char *path, int flag);
 /* Open file and return file descriptor, -1 if unsuccessful
  * (too many open files, console already open for reading).
  * A new file should be created if 'path' does not already exist.

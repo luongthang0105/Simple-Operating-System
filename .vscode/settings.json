@@ -17,6 +17,10 @@
         "pagetable.h": "c",
         "stringify.h": "c",
         "elfload.h": "c",
-        "mapping.h": "c"
+        "mapping.h": "c",
+        "sel4runtime.h": "c",
+        "gen_config.h": "c",
+        "cstring": "c",
+        "stdbool.h": "c"
     }
 }

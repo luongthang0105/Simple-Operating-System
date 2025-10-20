@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <errno.h>
 
 #include <cspace/cspace.h>
 #include <aos/sel4_zf_logif.h>
@@ -49,6 +50,7 @@
 #include "pagetable.h"
 #include "vm_region.h"
 #include <nfsc/libnfs.h>
+#include "fcntl.h"
 // #include "syscall_handlers/syscall_handlers.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
@@ -117,11 +119,11 @@ static sos_thread_t* worker_threads[MAX_WORKER_THREADS];
 
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
     struct callback_private_data *ret_private_data =  (struct callback_private_data *)private_data;
-   
+    
     int thread_index    = ret_private_data->thread_index;
     int fd              = ret_private_data->fd;
     struct nfsfh *nfsfh = (struct nfsfh *)data;
-    
+
     user_process.vfs->fd_table[fd].fh = nfsfh;
     seL4_Signal(worker_threads[thread_index]->ntfn);
 }
@@ -162,8 +164,8 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
 
     struct nfs_context *nfs_context = get_nfs_context();
     struct callback_private_data *private_data = malloc(sizeof(struct callback_private_data));
-    private_data->thread_index = thread_index;
-    private_data->fd = find_next_fd(user_process.vfs);
+    private_data->thread_index  = thread_index;
+    private_data->fd            = find_next_fd(user_process.vfs);
 
     if (private_data->fd >= MAX_NUM_FILES) {
         seL4_SetMR(0, -1);
