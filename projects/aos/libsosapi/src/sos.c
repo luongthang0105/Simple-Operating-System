@@ -89,25 +89,15 @@ int sos_read(int file, char *buf, size_t nbyte)
 }
 
 int sos_write(int file, const char *buf, size_t nbyte)
-{
-    // sos_fd_t *cur_file = &vfs.sos_fd_table[file];
+{   
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_WRITE); 
+    seL4_SetMR(1, buf);
+    seL4_SetMR(2, nbyte);
+    seL4_SetMR(3, file);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
 
-    // /* currently there's no a proper way to initialise the file status of files 
-    //  * with descriptors 0, 1, 2 (stdin, stdout, stderr), so to enable printf, we only
-    //  * check the valid file status for other files > 2
-    // */
-    // if (file > 2 && (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_WRITE(cur_file->mode))) return -1;
-    
-    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
-    // seL4_SetMR(0, SYSCALL_SOS_WRITE); 
-    // seL4_SetMR(1, buf);
-    // // printf("sending nbytes: %d\n", nbyte);
-    // seL4_SetMR(2, nbyte);
-    // seL4_SetMR(3, file);
-    // seL4_Call(SOS_IPC_EP_CAP, tag);
-
-    // return seL4_GetMR(0);
-    return -1;
+    return seL4_GetMR(0);
 }
 
 int sos_getdirent(int pos, char *name, size_t nbyte)
