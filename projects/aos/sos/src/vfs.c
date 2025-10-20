@@ -1,20 +1,25 @@
 #include <sossharedapi/vfs.h>
+#include <stdlib.h>
 
-void vfs_init(void) {
-    memset(&vfs, 0, sizeof(vfs_t));
+void vfs_init(vfs_t *vfs) {
+    for (int i = 0; i < MAX_NUM_FILES; i++) {
+        vfs->fd_table[i].is_opened = false;
+        vfs->fd_table[i].path = NULL;
+        vfs->fd_table[i].mode = 0;
+    }
 
     // Optional: mark 0, 1, 2 as "open" for terminal device
-    vfs.sos_fd_table[0].is_opened = true;
-    vfs.sos_fd_table[1].is_opened = true;
-    vfs.sos_fd_table[2].is_opened = true;
-    vfs.sos_fd_table[0].path = strdup("stdin");
-    vfs.sos_fd_table[1].path = strdup("stdout");
-    vfs.sos_fd_table[2].path = strdup("stderr");
+    vfs->fd_table[0].is_opened = true;
+    vfs->fd_table[1].is_opened = true;
+    vfs->fd_table[2].is_opened = true;
+    vfs->fd_table[0].path = "stdin";
+    vfs->fd_table[1].path = "stdout";
+    vfs->fd_table[2].path = "stderr";
 }
 
-int find_next_fd() {
+int find_next_fd(vfs_t *vfs) {
     int fd = 4; // reserve 0,1,2 for stdin/out/err and 3 for network_console
-    while (vfs.sos_fd_table[fd].is_opened && fd < MAX_NUM_FILES) {
+    while (vfs->fd_table[fd].is_opened && fd < MAX_NUM_FILES) {
         fd += 1;
     }
     return fd;
