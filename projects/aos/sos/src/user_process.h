@@ -1,6 +1,7 @@
 #pragma once
 #include "ut.h"
 #include "vm_region.h"
+#include <sossharedapi/vfs.h>
 
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
@@ -28,5 +29,6 @@ struct user_process {
     vm_region_t* heap_region;
     vm_region_t* stack_region;
 
+    vfs_t* vfs;
 };
 typedef struct user_process user_process_t;
