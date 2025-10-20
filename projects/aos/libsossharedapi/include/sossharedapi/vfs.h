@@ -2,6 +2,7 @@
 #pragma once
 #include <stdbool.h>
 #include <nfsc/libnfs.h>
+#include "sos.h"
 
 /* file modes */
 #define FM_EXEC  1
@@ -29,7 +30,6 @@ typedef struct {
     long      st_atime;   /* Unix file last access (open) time (ms) */
 } sos_stat_t;
 
-#define MAX_NUM_FILES 10
 typedef struct {
     fmode_t mode;
     bool is_opened;
@@ -38,7 +38,7 @@ typedef struct {
 } sos_fd_t;
 
 typedef struct {
-    sos_fd_t fd_table[MAX_NUM_FILES];
+    sos_fd_t fd_table[PROCESS_MAX_FILES];
 } vfs_t;
 
 /* file descriptor number is used to index to the array */
