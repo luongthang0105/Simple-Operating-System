@@ -297,11 +297,11 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     size_t nbytes           = seL4_GetMR(2);
     int file_desc           = seL4_GetMR(3);
     
-    if (file_desc == CONSOLE_FD) {
-        struct nfs_context *nfs_context = get_nfs_context();
+    char* temp_buf = malloc(nbytes);
+    copy_from_user(temp_buf, (void*)buf_vaddr, nbytes);
 
-        char* temp_buf = malloc(nbytes);
-        copy_from_user(temp_buf, (void*)buf_vaddr, nbytes);
+    if (file_desc != CONSOLE_FD) { /* normal files */
+        struct nfs_context *nfs_context = get_nfs_context();
 
         nfs_write_cb_args_t args = {.thread_index = thread_index};
         int ret = nfs_write_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes, temp_buf,
@@ -316,39 +316,14 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
         size_t bytes_written = args.bytes_written;
         seL4_SetMR(0, bytes_written);
         return;
-    } else {
-        size_t rem_bytes = nbytes;
-        while (rem_bytes > 0) {
-            unsigned char *data = find_frame_data(buf_vaddr, user_process.page_global_directory);
-            if (!data) {
-                seL4_SetMR(0, -1);
-                return;
-            }
-    
-            /*  [  offset  ][  max_bytes_to_send  ]
-                [          4096 bytes             ]
-                A frame has 4096 bytes, but the buf data only starts at data[offset].
-                Hence, there are only (PAGE_SIZE_4K - offset) bytes left to send.
-                
-                If rem_bytes is smaller than max_bytes_to_send, so we send rem_bytes only.
-                Otherwise, we send max_bytes_to_send only, 
-                leaving (rem_bytes - max_bytes_to_send) bytes for the next iteration.
-            */
-            size_t offset = buf_vaddr % PAGE_SIZE_4K;
-            size_t max_bytes_to_send = PAGE_SIZE_4K - offset;
-            size_t bytes_to_send = MIN(rem_bytes, max_bytes_to_send);
-            int bytes_sent = network_console_send(network_console, (char*)&data[offset], bytes_to_send);
-            if (bytes_sent == -1) {
-                ZF_LOGE("Failed to send %lu bytes via network_console_send", bytes_to_send);
-                seL4_SetMR(0, -1);
-                return;
-            }
-    
-            rem_bytes -= bytes_sent;
-            buf_vaddr += bytes_sent;
+    } else { /* console file, send it to network console */
+        int bytes_sent = network_console_send(network_console, temp_buf, nbytes);
+        if (bytes_sent == -1) {
+            ZF_LOGE("Failed to send %lu bytes via network_console_send", nbytes);
+            seL4_SetMR(0, -1);
+            return;
         }
-        
-        seL4_SetMR(0, nbytes - rem_bytes);
+        seL4_SetMR(0, bytes_sent);
         return;
     }
 }
