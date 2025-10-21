@@ -64,8 +64,16 @@ int sos_open(const char *path, int flag)
 
 int sos_close(int file)
 {
-    assert(!"You need to implement this");
-    return -1;
+    if (file < 0) return -1;
+    if (file == CONSOLE_FD) {
+        return 0;
+    }
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 5);
+    seL4_SetMR(0, SYSCALL_SOS_CLOSE);
+    seL4_SetMR(1, file);
+
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+   return seL4_GetMR(0);
 }
 
 int sos_read(int file, char *buf, size_t nbyte)
@@ -84,8 +92,8 @@ int sos_read(int file, char *buf, size_t nbyte)
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    if (file == 1) { /* stdin */
-        return sos_debug_print(buf, nbyte);        
+    if (file == 1 || file == 2) { /* stdout/stderr, let it writes to network console */
+        file = CONSOLE_FD;   
     }
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
@@ -128,14 +136,14 @@ pid_t sos_process_create(const char *path)
 
 int sos_process_delete(pid_t pid)
 {
-    assert(!"You need to implement this");
+    // assert(!"You need to implement this");
     return -1;
 }
 
 pid_t sos_my_id(void)
 {
 
-    assert(!"You need to implement this");
+    // assert(!"You need to implement this");
     return -1;
 
 }
