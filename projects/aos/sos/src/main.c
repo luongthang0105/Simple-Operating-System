@@ -195,7 +195,7 @@ void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *priva
     int fd              = ret_private_data->fd;
 
     if (err < 0) {
-        ZF_LOGE("[sos_open_callback] error: %d, error msg: %s\n", err, (char*)data);
+        ZF_LOGE("error: %d, error msg: %s\n", err, (char*)data);
         ret_private_data->err = err;
         seL4_Signal(worker_threads[thread_index]->ntfn);
         return;
@@ -214,7 +214,7 @@ void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *priva
     uintptr_t stat_buf_vaddr    = ret_private_data->stat_buf_vaddr;
 
     if (err < 0) {
-        ZF_LOGE("[sos_stat_callback] error: %d, error msg: %s\n", err, (char*)data);
+        ZF_LOGE("error: %d, error msg: %s\n", err, (char*)data);
         ret_private_data->err = err;
         seL4_Signal(worker_threads[thread_index]->ntfn);
         return;
