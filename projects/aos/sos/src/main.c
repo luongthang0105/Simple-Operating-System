@@ -171,7 +171,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
             ZF_LOGE("Unable to find a frame for buf_vaddr at %p", to_vaddr);
             return bytes_copied;
         }
-        
+
         // source data of the "to" buf
         unsigned char* source_data = frame_data(frame->frame_ref);
 
@@ -267,6 +267,12 @@ void handler_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index) {
 
     char *temp_path_buf = malloc(path_len);
     size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
+
+    if (strcmp(temp_path_buf, "..") == 0) {
+        free(temp_path_buf);
+        temp_path_buf = malloc(strlen(".") + 1);
+        strcpy(temp_path_buf, ".");
+    }
 
     struct nfs_context *nfs_context = get_nfs_context();
     struct sos_stat_callback_private_data *private_data = malloc(sizeof(struct sos_stat_callback_private_data));
@@ -532,8 +538,6 @@ void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_
     nfs_read_cb_args_t *args = private_data;
     
     args->bytes_read = copy_to_user(args->user_buf_vaddr, data, status);
-    printf("copied bytes: %lu\n", args->bytes_read);
-    printf("bytes read from nfs_read: %lu\n", status);
 
     seL4_Signal(worker_threads[args->thread_index]->ntfn);
     return;
@@ -569,7 +573,6 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
         seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
 
         size_t bytes_read = args.bytes_read;
-        printf("bytes read: %d\n", bytes_read);
         seL4_SetMR(0, bytes_read);
         return;
     } else {
@@ -704,9 +707,9 @@ void handler_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index) {
     ZF_LOGV("syscall: getdirent!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
    
-    size_t pos = seL4_GetMR(2);
-    uintptr_t buf_vaddr = seL4_GetMR(3);
-    size_t nbyte = seL4_GetMR(4);
+    size_t pos = seL4_GetMR(1);
+    uintptr_t buf_vaddr = seL4_GetMR(2);
+    size_t nbyte = seL4_GetMR(3);
 
     struct nfs_context* nfs_context = get_nfs_context();
     
@@ -735,10 +738,10 @@ void handler_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index) {
             }
         }
     }
-    // gets the name field, and copy it to the name buf
-    size_t rem_bytes = copy_to_user((void*) buf_vaddr, (void*)nfsdirent->name, nbyte);
+    // gets the name field, and copy it to the name buf (including null terminator)
+    size_t bytes_copied = copy_to_user((void*) buf_vaddr, (void*)nfsdirent->name, MIN(nbyte, strlen(nfsdirent->name) + 1));
 
-    seL4_SetMR(0, nbyte - rem_bytes);
+    seL4_SetMR(0, bytes_copied);
     return;
 }
 
@@ -1221,7 +1224,6 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_exit_group, sys_exit_group);
     muslcsys_install_syscall(__NR_ioctl, sys_ioctl);
     muslcsys_install_syscall(__NR_mmap, sys_mmap);
-    // muslcsys_install_syscall(__NR_munmap, sys_munmap);
     muslcsys_install_syscall(__NR_brk,  sys_brk);
     muslcsys_install_syscall(__NR_clock_gettime, sys_clock_gettime);
     muslcsys_install_syscall(__NR_nanosleep, sys_nanosleep);

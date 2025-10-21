@@ -112,3 +112,7 @@ tags
 cscope.out
 # Persistent undo
 [._]*.un~
+
+# benchmarking files
+results.tsv
+benchmark.dat
