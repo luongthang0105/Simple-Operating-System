@@ -20,10 +20,10 @@ void vfs_init(vfs_t *vfs) {
     vfs->fd_table[2].path = "stderr";
     vfs->fd_table[3].path = "console";
 
-    vfs->fd_table[0].mode |= O_RDWR;
-    vfs->fd_table[1].mode |= O_RDWR;
-    vfs->fd_table[2].mode |= O_RDWR;
-    vfs->fd_table[3].mode |= O_RDWR;
+    vfs->fd_table[0].mode |= O_WRONLY;
+    vfs->fd_table[1].mode |= O_WRONLY;
+    vfs->fd_table[2].mode |= O_WRONLY;
+    vfs->fd_table[3].mode |= O_WRONLY;
 }
 
 int find_next_fd(vfs_t *vfs) {
