@@ -328,13 +328,14 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     }
 
     struct nfs_context *nfs_context = get_nfs_context();
-    struct callback_private_data *private_data = malloc(sizeof(struct callback_private_data));
+    struct sos_open_callback_private_data *private_data = malloc(sizeof(struct sos_open_callback_private_data));
     if (private_data == NULL) {
         ZF_LOGE("Failed to allocate memory for nfs_open callback private_data");
         seL4_SetMR(0, -1);
         free(temp_path_buf);
         return;        
     }
+
     private_data->thread_index  = thread_index;
     private_data->fd            = fd;
     private_data->err           = 0;
@@ -1190,7 +1191,7 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_exit_group, sys_exit_group);
     muslcsys_install_syscall(__NR_ioctl, sys_ioctl);
     muslcsys_install_syscall(__NR_mmap, sys_mmap);
-    muslcsys_install_syscall(__NR_munmap, sys_munmap);
+    // muslcsys_install_syscall(__NR_munmap, sys_munmap);
     muslcsys_install_syscall(__NR_brk,  sys_brk);
     muslcsys_install_syscall(__NR_clock_gettime, sys_clock_gettime);
     muslcsys_install_syscall(__NR_nanosleep, sys_nanosleep);
