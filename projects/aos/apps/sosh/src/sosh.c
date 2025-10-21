@@ -421,12 +421,12 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
     {"time", second_time}, {"mtime", micro_time}, {"kill", kill},
     {"benchmark", benchmark}
 };
-
 int main(void)
-{
+{   
+    sleep(2);
     printf("\n[SOS Starting]\n");
 
-    char buf[BUF_SIZ];
+    char buf[BUF_SIZ] = "hello";
     char *argv[MAX_ARGS];
     int i, r, done, found, new, argc;
     char *bp, *p;
@@ -434,6 +434,20 @@ int main(void)
     in = open("console", O_RDONLY);
     assert(in >= 0);
 
+    int raw_fd = open("raww.txt", O_RDONLY);
+    assert(raw_fd >= 0);
+    int w = write(raw_fd, buf, 5);
+    assert(w == -1);
+    close(raw_fd);
+    raw_fd = open("raww.txt", O_WRONLY);
+    w = write(raw_fd, buf, 5);
+    assert(w == 5);
+    close(raw_fd);
+    raw_fd = open("raww.txt", O_RDWR);
+    r = read(raw_fd, bp, 5);
+    assert(r == 5);
+
+    // prstat("raw.txt");
     bp = buf;
     done = 0;
     new = 1;
