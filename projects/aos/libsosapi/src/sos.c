@@ -64,50 +64,46 @@ int sos_open(const char *path, int flag)
 
 int sos_close(int file)
 {
-    assert(!"You need to implement this");
-    return -1;
+    if (file < 0) return -1;
+    if (file == CONSOLE_FD) {
+        return 0;
+    }
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 5);
+    seL4_SetMR(0, SYSCALL_SOS_CLOSE);
+    seL4_SetMR(1, file);
+
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+   return seL4_GetMR(0);
 }
 
 int sos_read(int file, char *buf, size_t nbyte)
 {   
-    // sos_fd_t *cur_file = &vfs.sos_fd_table[file];
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_READ); 
+    seL4_SetMR(1, buf);
+    seL4_SetMR(2, nbyte);
+    seL4_SetMR(3, file);
 
-    // // check invalid file
-    // if (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_READ(cur_file->mode)) {
-    //     return -1;
-    // }
-    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
-    // seL4_SetMR(0, SYSCALL_SOS_READ); 
-    // seL4_SetMR(1, file);
-    // seL4_SetMR(2, buf);
-    // seL4_SetMR(3, nbyte);
-
-    // seL4_Call(SOS_IPC_EP_CAP, tag);
-    // seL4_Word num_byte_read = seL4_GetMR(0);
-    // return num_byte_read;
-    return -1;
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+    
+    seL4_Word num_byte_read = seL4_GetMR(0);
+    return num_byte_read;
 }
 
 int sos_write(int file, const char *buf, size_t nbyte)
 {
-    // sos_fd_t *cur_file = &vfs.sos_fd_table[file];
+    if (file == 1 || file == 2) { /* stdout/stderr, let it writes to network console */
+        file = CONSOLE_FD;   
+    }
 
-    // /* currently there's no a proper way to initialise the file status of files 
-    //  * with descriptors 0, 1, 2 (stdin, stdout, stderr), so to enable printf, we only
-    //  * check the valid file status for other files > 2
-    // */
-    // if (file > 2 && (file > MAX_NUM_FILES || !cur_file->is_opened || !HAS_FM_WRITE(cur_file->mode))) return -1;
-    
-    // seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
-    // seL4_SetMR(0, SYSCALL_SOS_WRITE); 
-    // seL4_SetMR(1, buf);
-    // // printf("sending nbytes: %d\n", nbyte);
-    // seL4_SetMR(2, nbyte);
-    // seL4_SetMR(3, file);
-    // seL4_Call(SOS_IPC_EP_CAP, tag);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_WRITE); 
+    seL4_SetMR(1, buf);
+    seL4_SetMR(2, nbyte);
+    seL4_SetMR(3, file);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
 
-    // return seL4_GetMR(0);
-    return -1;
+    return seL4_GetMR(0);
 }
 
 int sos_getdirent(int pos, char *name, size_t nbyte)
@@ -128,8 +124,14 @@ int sos_getdirent(int pos, char *name, size_t nbyte)
 
 int sos_stat(const char *path, sos_stat_t *buf)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_STAT);
+    seL4_SetMR(1, path);
+    seL4_SetMR(2, strlen(path));
+    seL4_SetMR(3, buf);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }
 
 pid_t sos_process_create(const char *path)
@@ -140,14 +142,14 @@ pid_t sos_process_create(const char *path)
 
 int sos_process_delete(pid_t pid)
 {
-    assert(!"You need to implement this");
+    // assert(!"You need to implement this");
     return -1;
 }
 
 pid_t sos_my_id(void)
 {
 
-    assert(!"You need to implement this");
+    // assert(!"You need to implement this");
     return -1;
 
 }
