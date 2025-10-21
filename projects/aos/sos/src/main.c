@@ -149,7 +149,7 @@ static size_t copy_from_user(void* to, const void* from, size_t nbyte) {
         size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
         size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
         
-        strncpy(&temp[bytes_copied], &source_data[offset], bytes_to_copy);
+        memcpy(&temp[bytes_copied], &source_data[offset], bytes_to_copy);
 
         rem_bytes -= bytes_to_copy;
         from_vaddr += bytes_to_copy;
@@ -180,7 +180,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
         size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
         
         char *temp = (char*) from;
-        strncpy(&source_data[offset], &temp[bytes_copied], bytes_to_copy);
+        memcpy(&source_data[offset], &temp[bytes_copied], bytes_to_copy);
 
         rem_bytes -= bytes_to_copy;
         to_vaddr += bytes_to_copy;
@@ -222,14 +222,13 @@ void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *priva
    
     struct nfs_stat_64 *nfs_stat = (struct nfs_stat_64 *)data;
     sos_stat_t *sos_stat = malloc(sizeof(sos_stat_t));
-
     sos_stat->st_type   = ret_private_data->st_type;
     sos_stat->st_fmode  = nfs_stat->nfs_mode;
     sos_stat->st_size   = nfs_stat->nfs_size;
     sos_stat->st_ctime  = nfs_stat->nfs_ctime;
     sos_stat->st_atime  = nfs_stat->nfs_atime;
 
-    copy_to_user(stat_buf_vaddr, sos_stat, sizeof(sos_stat_t));
+    copy_to_user((void *)stat_buf_vaddr, sos_stat, sizeof(sos_stat_t));
     seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 
@@ -265,7 +264,7 @@ void handler_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index) {
     private_data->err               = 0;
 
     int err = nfs_stat64_async(nfs_context, temp_path_buf, sos_stat_callback, private_data);
-    if (err) {
+    if (err < 0) {
         ZF_LOGE("An error occured when trying to queue the command nfs_stat64_async. The callback will not be invoked.");
         free(temp_path_buf);
         free(private_data);
