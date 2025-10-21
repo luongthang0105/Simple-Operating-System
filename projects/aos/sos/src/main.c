@@ -127,8 +127,7 @@ struct network_console *network_console;
 #define MAX_WORKER_THREADS  1
 static sos_thread_t* worker_threads[MAX_WORKER_THREADS];
 
-/* Copy data from user app to SOS. Returns number of bytes that could not be copied. On success, this will be zero. 
-    `nbyte` should include the null character.
+/* Copy data from user app to SOS. Returns number of bytes copied. 
 */
 static size_t copy_from_user(void* to, const void* from, size_t nbyte) {
     size_t rem_bytes = nbyte;
@@ -140,7 +139,7 @@ static size_t copy_from_user(void* to, const void* from, size_t nbyte) {
         frame_metadata_t *frame = find_frame(from_vaddr, user_process.page_global_directory);
         if (!frame) {
             ZF_LOGE("Unable to find a frame for buf_vaddr at %p", from_vaddr);
-            return nbyte - bytes_copied;
+            return bytes_copied;
         }
 
         // source data of the "from" buf
@@ -160,8 +159,7 @@ static size_t copy_from_user(void* to, const void* from, size_t nbyte) {
 }
 
 
-/* Copy data from SOS to user app. Returns number of bytes that could not be copied. On success, this will be zero. 
-    `nbyte` should include the null character.
+/* Copy data from SOS to user app. Returns number of bytes copied.
 */
 static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
     size_t rem_bytes = nbyte;
@@ -171,7 +169,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
         frame_metadata_t *frame = find_frame(to_vaddr, user_process.page_global_directory);
         if (!frame) {
             ZF_LOGE("Unable to find a frame for buf_vaddr at %p", to_vaddr);
-            return nbyte - bytes_copied;
+            return bytes_copied;
         }
         
         // source data of the "to" buf
@@ -305,6 +303,12 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     }
 
     char *temp_path_buf = malloc(path_len);
+    if (temp_path_buf == NULL) {
+        ZF_LOGE("Failed to allocate memory for temp_path_buf");
+        seL4_SetMR(0, -1);
+        return;        
+    }
+
     size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
     printf("temp_path_buf: %s\n", temp_path_buf);
 
@@ -324,7 +328,13 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     }
 
     struct nfs_context *nfs_context = get_nfs_context();
-    struct sos_open_callback_private_data *private_data = malloc(sizeof(struct sos_open_callback_private_data));
+    struct callback_private_data *private_data = malloc(sizeof(struct callback_private_data));
+    if (private_data == NULL) {
+        ZF_LOGE("Failed to allocate memory for nfs_open callback private_data");
+        seL4_SetMR(0, -1);
+        free(temp_path_buf);
+        return;        
+    }
     private_data->thread_index  = thread_index;
     private_data->fd            = fd;
     private_data->err           = 0;
@@ -356,50 +366,147 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     seL4_SetMR(0, fd);
 }
 
-void handler_sos_write(seL4_MessageInfo_t *reply_msg) {
+typedef struct {
+    size_t thread_index;
+    int status;
+} nfs_close_cb_args_t;
+
+void nfs_close_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
+    if (status < 0) {
+        ZF_LOGE("nfs_close failed with error: %s\n", (char*)data);
+        return;
+    }
+
+    nfs_close_cb_args_t *args = private_data;
+    size_t thread_index = args->thread_index;
+    args->status = status;
+
+    seL4_Signal(worker_threads[thread_index]->ntfn);
+    return;
+}
+
+void handler_sos_close(seL4_MessageInfo_t *reply_msg, int thread_index) {
+    ZF_LOGE("syscall: close!\n");
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+
+    size_t fd = seL4_GetMR(1);    
+    
+    if (fd >= PROCESS_MAX_FILES || user_process.vfs->fd_table[fd].is_opened == false) {
+        ZF_LOGE("Invalid file descriptor");
+        seL4_SetMR(0, -1);
+        return;
+    }
+
+    struct nfs_context* nfs_context = get_nfs_context();
+    nfs_close_cb_args_t args = {.thread_index = thread_index};
+    int ret = nfs_close_async(nfs_context, user_process.vfs->fd_table[fd].fh, nfs_close_cb, (void*)&args);
+    if (ret < 0) {
+        ZF_LOGE("Failed to queue nfs_close_async");
+        seL4_SetMR(0, -1);
+        return;
+    }
+
+    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+
+    if (args.status < 0) {
+        seL4_SetMR(0, -1);
+        return;
+    }
+
+    // Mark fd slot as free. Don't need to free (struct nfsfh*) because it has been freed in nfs_close_async.
+    user_process.vfs->fd_table[fd].is_opened = false;
+    free(user_process.vfs->fd_table[fd].path);
+
+    seL4_SetMR(0, 0);
+    return;
+}
+
+typedef struct {
+    size_t thread_index;
+    size_t bytes_written;
+} nfs_write_cb_args_t;
+
+void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
+    if (status < 0) {
+        ZF_LOGE("nfs_write failed with error: %s\n", (char*)data);
+        return;
+    }
+
+    nfs_write_cb_args_t *args = private_data;
+    size_t thread_index = args->thread_index;
+    args->bytes_written = status;
+
+    seL4_Signal(worker_threads[thread_index]->ntfn);
+    return;
+}
+
+void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     ZF_LOGV("syscall: write!\n");
 
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
     
     uintptr_t buf_vaddr     = seL4_GetMR(1);
     size_t nbytes           = seL4_GetMR(2);
-    int file_desc           = seL4_GetMR(3);
+    size_t file_desc        = seL4_GetMR(3);
     
-    size_t rem_bytes = nbytes;
-    while (rem_bytes > 0) {
-        unsigned char *data = find_frame_data(buf_vaddr, user_process.page_global_directory);
-        if (!data) {
-            seL4_SetMR(0, -1);
-            return;
-        }
-
-        /*  [  offset  ][  max_bytes_to_send  ]
-            [          4096 bytes             ]
-            A frame has 4096 bytes, but the buf data only starts at data[offset].
-            Hence, there are only (PAGE_SIZE_4K - offset) bytes left to send.
-            
-            If rem_bytes is smaller than max_bytes_to_send, so we send rem_bytes only.
-            Otherwise, we send max_bytes_to_send only, 
-            leaving (rem_bytes - max_bytes_to_send) bytes for the next iteration.
-        */
-        size_t offset = buf_vaddr % PAGE_SIZE_4K;
-        size_t max_bytes_to_send = PAGE_SIZE_4K - offset;
-        size_t bytes_to_send = MIN(rem_bytes, max_bytes_to_send);
-        int bytes_sent = network_console_send(network_console, (char*)&data[offset], bytes_to_send);
-        if (bytes_sent == -1) {
-            ZF_LOGE("Failed to send %lu bytes via network_console_send", bytes_to_send);
-            seL4_SetMR(0, -1);
-            return;
-        }
-
-        rem_bytes -= bytes_sent;
-        buf_vaddr += bytes_sent;
+    char* temp_buf = malloc(nbytes);
+    if (temp_buf == NULL) {
+        ZF_LOGE("Failed to allocate memory for temp_buf");
+        seL4_SetMR(0, -1);
+        return;        
     }
-    
-    seL4_SetMR(0, nbytes - rem_bytes);
-    return;
+
+    copy_from_user(temp_buf, (void*)buf_vaddr, nbytes);
+
+    if (file_desc != CONSOLE_FD) { /* normal files */
+        struct nfs_context *nfs_context = get_nfs_context();
+
+        nfs_write_cb_args_t args = {.thread_index = thread_index};
+        int ret = nfs_write_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes, temp_buf,
+                        nfs_write_cb, (void*)&args);
+        if (ret < 0) {
+            ZF_LOGE("Failed to queue nfs_write_async");
+            seL4_SetMR(0, -1);
+            free(temp_buf);
+            return;
+        }
+        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+
+        size_t bytes_written = args.bytes_written;
+        seL4_SetMR(0, bytes_written);
+    } else { /* console file, send it to network console */
+        int bytes_sent = network_console_send(network_console, temp_buf, nbytes);
+        if (bytes_sent == -1) {
+            ZF_LOGE("Failed to send %lu bytes via network_console_send", nbytes);
+            seL4_SetMR(0, -1);
+        } else {
+            seL4_SetMR(0, bytes_sent);
+        }
+    }
+    free(temp_buf);
 }
 
+typedef struct {
+    size_t thread_index;
+    size_t bytes_read;
+    void *user_buf_vaddr;
+} nfs_read_cb_args_t;
+
+void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
+    if (status < 0) {
+        ZF_LOGE("nfs_read failed with error: %s\n", (char*)data);
+        return;
+    }
+
+    nfs_read_cb_args_t *args = private_data;
+    
+    args->bytes_read = copy_to_user(args->user_buf_vaddr, data, status);
+    printf("copied bytes: %lu\n", args->bytes_read);
+    printf("bytes read from nfs_read: %lu\n", status);
+
+    seL4_Signal(worker_threads[args->thread_index]->ntfn);
+    return;
+}
 /*  nwcs_reader must be set to -1 before the function retunrs. 
     write_to_buf() will signal when nwcs_reader != -1, so not setting it back to -1
     will make write_to_buf() signals the syscall loop instead.
@@ -407,42 +514,61 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg) {
 void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
     ZF_LOGV("syscall: read!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
-   
-    uintptr_t buf_vaddr = seL4_GetMR(2);
-    size_t nbytes = seL4_GetMR(3);
-    size_t remaining_bytes = nbytes;
-    while (remaining_bytes > 0) {
-        if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
-            nwcs_reader = thread_index;
-            seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
-        }
-        // find the frame data associated with this buf_vaddr
-        unsigned char *data = find_frame_data(buf_vaddr, user_process.page_global_directory);
-        if (!data) {
-            nwcs_reader = -1;
-            seL4_SetMR(0, nbytes - remaining_bytes);
-            break;
-        }
 
-        size_t offset = buf_vaddr % PAGE_SIZE_4K;
-        size_t num_bytes_to_write = MIN(remaining_bytes, PAGE_SIZE_4K - offset);
-        num_bytes_to_write = MIN(num_bytes_to_write, SGLIB_QUEUE_LENGTH(char, nwcs_buf, i, j, DIM));
+    uintptr_t buf_vaddr     = seL4_GetMR(1);
+    size_t nbytes           = seL4_GetMR(2);
+    int file_desc           = seL4_GetMR(3);
 
-        for (size_t index = 0; index < num_bytes_to_write; index++) {
-            char char_to_write = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
-            data[offset + index] = char_to_write;
-            remaining_bytes -= 1;
-            buf_vaddr += 1;
-            SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
-            if (char_to_write == '\n') {
-                nwcs_reader = -1;
-                seL4_SetMR(0, nbytes - remaining_bytes);
-                return;
+    if (file_desc != CONSOLE_FD) { /* normal files */
+        if (user_process.vfs->fd_table[file_desc].fh == NULL) {
+            ZF_LOGE("NFS file handle for fd=%d does not exist", file_desc);
+            seL4_SetMR(0, -1);
+            return;
+        }
+        struct nfs_context *nfs_context = get_nfs_context();
+
+        nfs_read_cb_args_t args = {.thread_index = thread_index, .user_buf_vaddr = buf_vaddr};
+        int ret = nfs_read_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes,
+                        nfs_read_cb, (void*)&args);
+        if (ret < 0) {
+            ZF_LOGE("Failed to queue nfs_read_async");
+            seL4_SetMR(0, -1);
+            return;
+        }
+        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+
+        size_t bytes_read = args.bytes_read;
+        printf("bytes read: %d\n", bytes_read);
+        seL4_SetMR(0, bytes_read);
+        return;
+    } else {
+        char* temp_buf = malloc(nbytes);
+        size_t remaining_bytes = nbytes;
+        size_t bytes_read = 0;
+        while (remaining_bytes > 0) {
+            if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
+                nwcs_reader = thread_index;
+                seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
             }
+
+            temp_buf[bytes_read] = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
+            SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+            if (temp_buf[bytes_read] == '\n') {
+                bytes_read++;
+                break;
+            }
+
+            remaining_bytes--;
+            bytes_read++;
         }
+        nwcs_reader = -1;
+        seL4_SetMR(0, bytes_read);
+
+        copy_to_user(buf_vaddr, temp_buf, nbytes);
+
+        free(temp_buf);
+        return;
     }
-    nwcs_reader = -1;
-    seL4_SetMR(0, nbytes);
 }
 
 void handler_sos_timestamp(seL4_MessageInfo_t *reply_msg) {
@@ -531,7 +657,7 @@ typedef struct nfs_opendir_cb_args {
 void nfs_opendir_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
     if (status < 0) {
         user_process.curr_dir = NULL;
-        ZF_LOGE("opendir failed with error: %s\n", (char*)data);
+        ZF_LOGE("nfs_opendir failed with error: %s\n", (char*)data);
         return;
     }
 
@@ -606,8 +732,11 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     case SYSCALL_SOS_OPEN:
         handler_sos_open(&reply_msg, thread_index);
         break;
+    case SYSCALL_SOS_CLOSE:
+        handler_sos_close(&reply_msg, thread_index);
+        break;
     case SYSCALL_SOS_WRITE:
-        handler_sos_write(&reply_msg);
+        handler_sos_write(&reply_msg, thread_index);
         break;
     case SYSCALL_SOS_READ:
         handler_sos_read(&reply_msg, thread_index);
@@ -1061,6 +1190,7 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_exit_group, sys_exit_group);
     muslcsys_install_syscall(__NR_ioctl, sys_ioctl);
     muslcsys_install_syscall(__NR_mmap, sys_mmap);
+    muslcsys_install_syscall(__NR_munmap, sys_munmap);
     muslcsys_install_syscall(__NR_brk,  sys_brk);
     muslcsys_install_syscall(__NR_clock_gettime, sys_clock_gettime);
     muslcsys_install_syscall(__NR_nanosleep, sys_nanosleep);
