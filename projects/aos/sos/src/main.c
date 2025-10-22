@@ -168,8 +168,18 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
     while (rem_bytes > 0) {
         frame_metadata_t *frame = find_frame(to_vaddr, user_process.page_global_directory);
         if (!frame) {
-            ZF_LOGE("Unable to find a frame for buf_vaddr at %p", to_vaddr);
-            return bytes_copied;
+            vm_region_t *valid_region = find_valid_region(to_vaddr, BIT(6), user_process.vm_regions);
+            if (valid_region == NULL) {
+                ZF_LOGE("Fault address %p resolves to an invalid region access", (void*)to_vaddr);
+                return 0;
+            }
+            
+            int result = allocate_new_frame(&cspace, to_vaddr, &user_process, valid_region->permission);
+            if (result != 0) {
+                ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)to_vaddr);
+                return 0;
+            }
+            continue;
         }
 
         // source data of the "to" buf
@@ -457,6 +467,7 @@ void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private
     seL4_Signal(worker_threads[thread_index]->ntfn);
     return;
 }
+#define BREAKDOWN_THRESHOLD 70000
 
 void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     ZF_LOGV("syscall: write!\n");
@@ -467,6 +478,12 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     size_t nbytes           = seL4_GetMR(2);
     size_t file_desc        = seL4_GetMR(3);
     
+    if (nbytes >= BREAKDOWN_THRESHOLD) {
+        ZF_LOGE("nbytes to write is too large!");
+        seL4_SetMR(0, -1);
+        return;
+    }
+
     if (file_desc < 0 || file_desc >= PROCESS_MAX_FILES) {
         ZF_LOGE("File descriptor is invalid.");
         seL4_SetMR(0, -1);
@@ -481,7 +498,7 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
 
     if (user_process.vfs->fd_table[file_desc].mode != O_WRONLY && 
         user_process.vfs->fd_table[file_desc].mode != O_RDWR) {
-        ZF_LOGE("File is not open to write!");
+        ZF_LOGE("File %d is not open to write!", file_desc);
         seL4_SetMR(0, -1);
         return;
     }
@@ -493,7 +510,13 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
         return;        
     }
 
-    copy_from_user(temp_buf, (void*)buf_vaddr, nbytes);
+    size_t bytes_copied_from_user = copy_from_user(temp_buf, (void*)buf_vaddr, nbytes);
+    if (bytes_copied_from_user == 0) {
+        free(temp_buf);
+        ZF_LOGE("Failed to copy from user");
+        seL4_SetMR(0, -1);
+        return; 
+    }
 
     if (file_desc != CONSOLE_FD) { /* normal files */
         struct nfs_context *nfs_context = get_nfs_context();
@@ -553,6 +576,24 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
     uintptr_t buf_vaddr     = seL4_GetMR(1);
     size_t nbytes           = seL4_GetMR(2);
     int file_desc           = seL4_GetMR(3);
+
+    if (nbytes >= BREAKDOWN_THRESHOLD) {
+        ZF_LOGE("nbytes to read is too large!");
+        seL4_SetMR(0, -1);
+        return;
+    }
+
+    if (file_desc < 0 || file_desc >= PROCESS_MAX_FILES) {
+        ZF_LOGE("File descriptor is invalid.");
+        seL4_SetMR(0, -1);
+        return;
+    }
+
+    if (!user_process.vfs->fd_table[file_desc].is_opened) {
+        ZF_LOGE("File is not open yet!");
+        seL4_SetMR(0, -1);
+        return;
+    }
 
     if (file_desc != CONSOLE_FD) { /* normal files */
         if (user_process.vfs->fd_table[file_desc].fh == NULL) {
