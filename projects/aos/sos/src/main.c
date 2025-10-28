@@ -78,7 +78,8 @@
 
 /* The number of additional stack pages to provide to the initial
  * process */
-#define INITIAL_PROCESS_EXTRA_STACK_PAGES 9*29
+#define INITIAL_PROCESS_STACK_PAGES 10
+#define MAX_PROCESS_STACK_PAGES 9*29
 
 
 /* Network console (nwcs) circular queue buffer */
@@ -563,7 +564,7 @@ void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_
     }
 
     nfs_read_cb_args_t *args = private_data;
-    
+
     args->bytes_read = copy_to_user(args->user_buf_vaddr, data, status);
 
     seL4_Signal(worker_threads[args->thread_index]->ntfn);
@@ -1045,7 +1046,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     cspace_free_slot(cspace, local_stack_cptr);
 
     /* Exend the stack with extra pages */
-    for (int page = 0; page < 10; page++) { // needs to make this a magic number, and rename the INITIAL_PROCESS_EXTRA_STACK_PAGES to sth else (or use it for this, and define a different name for the actual stack size)
+    for (int page = 0; page < INITIAL_PROCESS_STACK_PAGES; page++) {
         stack_bottom -= PAGE_SIZE_4K;
         int result = allocate_new_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
         if (result != 0) {
@@ -1054,7 +1055,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         }
     }
     /* Create a stack region */
-    user_process.stack_region = add_vm_region(user_process.vm_regions, stack_top, INITIAL_PROCESS_EXTRA_STACK_PAGES * PAGE_SIZE_4K, seL4_ReadWrite, true);
+    user_process.stack_region = add_vm_region(user_process.vm_regions, stack_top, MAX_PROCESS_STACK_PAGES * PAGE_SIZE_4K, seL4_ReadWrite, true);
     if (user_process.stack_region == NULL) {
         ZF_LOGE("Unable to add stack region");
         return 0;
