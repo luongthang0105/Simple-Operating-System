@@ -265,7 +265,6 @@ int handler_sos_open_nwcs(fmode_t mode) {
     }
 
     bool has_reader = (console->mode == O_RDONLY || console->mode == O_RDWR);
-    ZF_LOGE("has reader: %d\n", has_reader);
     switch (mode) {
         case O_RDONLY:
         case O_RDWR:
@@ -337,7 +336,6 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     int path_len            = seL4_GetMR(2) + 1; // now includes null terminator
     fmode_t mode            = seL4_GetMR(3);
 
-    printf("received mode: %d\n", mode);
     unsigned char *path_data = find_frame_data(path_vaddr, user_process.page_global_directory);
     if (!path_data) {
         seL4_SetMR(0, -1);
@@ -352,7 +350,6 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
     }
 
     size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
-    printf("temp_path_buf: %s\n", temp_path_buf);
 
     if (strcmp(temp_path_buf, "console") == 0) {
         free(temp_path_buf);
