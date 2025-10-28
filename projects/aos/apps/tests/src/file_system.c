@@ -85,13 +85,18 @@ int test_read_file_opened_with_read_mode() {
     char buf[BUF_SIZE];
     int num_read = read(fd, buf, BUF_SIZE);
     assert(num_read == 0);
+
+    close(fd); // clean up the state for the next test
 }
 
 int test_read_file_opened_with_write_mode() {
     fd = open("file.txt", O_WRONLY);
+
     char buf[BUF_SIZE];
     int res = read(fd, buf, BUF_SIZE);
     assert(res == -1);
+
+    close(fd); // clean up the state for the next test
 }
 
 int test_file_system() {
