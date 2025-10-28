@@ -9,11 +9,6 @@
 #define FM_READ  4
 typedef int fmode_t;
 
-/* file mode checks */
-#define HAS_FM_READ(x)      ((x >> 2) & 1)
-#define HAS_FM_WRITE(x)     ((x >> 1) & 1)
-#define HAS_FM_EXEC(x)      (x & 1)
-
 /* stat file types */
 #define ST_FILE    1    /* plain file */
 #define ST_SPECIAL 2    /* special (console) file */

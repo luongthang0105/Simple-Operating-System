@@ -19,15 +19,13 @@
 #include <fcntl.h>
 #include <nfsc/libnfs.h>
 
-static size_t sos_debug_print(const void *vData, size_t count)
+static size_t sos_print(const void *vData, size_t count)
 {
-#ifdef CONFIG_DEBUG_BUILD
     size_t i;
     const char *realdata = vData;
     for (i = 0; i < count; i++) {
         seL4_DebugPutChar(realdata[i]);
     }
-#endif
     return count;
 }
 
@@ -48,15 +46,12 @@ int sos_open(const char *path, fmode_t mode)
 int sos_close(int file)
 {
     if (file < 0) return -1;
-    if (file == CONSOLE_FD) {
-        return 0;
-    }
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 5);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
     seL4_SetMR(0, SYSCALL_SOS_CLOSE);
     seL4_SetMR(1, file);
 
     seL4_Call(SOS_IPC_EP_CAP, tag);
-   return seL4_GetMR(0);
+    return seL4_GetMR(0);
 }
 
 #define BREAKDOWN_THRESHOLD 70000
@@ -94,9 +89,12 @@ int sos_read(int file, char *buf, size_t nbyte)
 }
 
 int sos_write(int file, const char *buf, size_t nbyte)
-{
+{   
+    // TODO: currently assuming that stdout use sos_print instead of printing to nwcs, 
+    // should ask on the forum whats the intended behaviour for stdout/stderr
+    
     if (file == 1 || file == 2) { /* stdout/stderr, let it writes to network console */
-        file = CONSOLE_FD;   
+        return sos_print(buf, nbyte);
     }
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
