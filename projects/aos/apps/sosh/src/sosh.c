@@ -435,40 +435,6 @@ int main(void)
     in = open("console", O_RDONLY);
     assert(in >= 0);
 
-    // char *buf2 = &buf[0] + 1000 * 1024;
-
-    // int test = open("test.txt", O_RDWR);
-    // int testw = write(test, buf2, 8092);
-
-    // for (int i = 0; i < 8092; i++) {
-    //     char c = buf2[i];
-    //     if (c == 0) {
-    //         break;
-    //     }
-    //     printf("%c", c);
-    // }
-
-    int fd1 = open("raw1.txt", O_RDONLY);
-    assert(fd1 > 0);
-
-    int fd2 = open("raw2.txt", O_WRONLY);
-    assert(fd2 > 0);
-
-    int w = write(fd2, buf, 5);
-    assert(w == 5);
-
-    // int w = write(raw1_fd, buf, 5);
-    // assert(w == -1);
-    // close(raw_fd);
-    // raw_fd = open("raww.txt", O_WRONLY);
-    // w = write(raw_fd, buf, 5);
-    // assert(w == 5);
-    // close(raw_fd);
-    // raw_fd = open("raww.txt", O_RDWR);
-    // r = read(raw_fd, bp, 5);
-    // assert(r == 5);
-
-    // prstat("raw.txt");
     bp = buf;
     done = 0;
     new = 1;
