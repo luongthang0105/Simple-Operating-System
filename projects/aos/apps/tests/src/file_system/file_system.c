@@ -12,7 +12,7 @@
 /* Your OS header file */
 #include <sos.h>
 
-#define BUF_SIZ    6144
+#define BUF_SIZE    6144
 #define MAX_ARGS   32
 static int fd;
 static sos_stat_t sbuf;
@@ -40,15 +40,15 @@ int test_open_non_existent_file() {
 
 int test_read_file_opened_with_read_mode() {
     fd = open("file.txt", O_RDONLY);
-    char buf[BUF_SIZ];
-    int num_read = read(fd, buf, BUF_SIZ);
+    char buf[BUF_SIZE];
+    int num_read = read(fd, buf, BUF_SIZE);
     assert(num_read == 0);
 }
 
 int test_read_file_opened_with_write_mode() {
     fd = open("file.txt", O_WRONLY);
-    char buf[BUF_SIZ];
-    int res = read(fd, buf, BUF_SIZ);
+    char buf[BUF_SIZE];
+    int res = read(fd, buf, BUF_SIZE);
     // assert(res == -1);
 }
 
@@ -64,7 +64,7 @@ int test_file_system() {
     // write to file
 
     // file stat
-    
+
     printf("File system test\tPassed\n");
 }
 
