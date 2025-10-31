@@ -177,7 +177,9 @@ seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t 
     frame_metadata->frame_ref = frame;
     frame_metadata->frame_cap = frame_cptr;
 
-    err = sos_map_frame(cspace, frame_metadata, vaddr,
+    uintptr_t aligned_vaddr = PAGE_ALIGN_4K(vaddr); /* seL4 page map methods only accepts vaddr that aligns with the size of a Page (4KB) */
+
+    err = sos_map_frame(cspace, frame_metadata, aligned_vaddr,
                     seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process);
     if (err != seL4_NoError) {
         // delete the cap and free the allocated slot
