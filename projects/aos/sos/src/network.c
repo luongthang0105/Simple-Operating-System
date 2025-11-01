@@ -44,7 +44,7 @@
 #include "mapping.h"
 #include "irq.h"
 #include "ut.h"
-
+#include "utils.h"
 
 #ifndef SOS_NFS_DIR
 #  ifdef CONFIG_SOS_NFS_DIR
@@ -68,6 +68,9 @@ static char nfs_dir_buf[PATH_MAX];
 static uint8_t ip_octet;
 
 static void nfs_mount_cb(int status, struct nfs_context *nfs, void *data, void *private_data);
+typedef struct nfs_mount_cb_args {
+    seL4_CPtr ntfn;
+} nfs_mount_cb_args_t;
 
 struct nfs_context *get_nfs_context() {
     return nfs;
@@ -290,16 +293,36 @@ void network_init(cspace_t *cspace, void *timer_vaddr, seL4_CPtr irq_ntfn)
 
     nfs_set_debug(nfs, 10);
     sprintf(nfs_dir_buf, "%s-%d-root", SOS_NFS_DIR, ip_octet);
-    int ret = nfs_mount_async(nfs, CONFIG_SOS_GATEWAY, nfs_dir_buf, nfs_mount_cb, NULL);
+    
+    /* setting up ntfn to wait until nfs_mount_cb finished */
+    seL4_CPtr ntfn;
+    ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
+    ZF_LOGF_IF(!ut, "No memory for notification object");
+    nfs_mount_cb_args_t cb_args = {.ntfn = ntfn};
+
+    int ret = nfs_mount_async(nfs, CONFIG_SOS_GATEWAY, nfs_dir_buf, nfs_mount_cb, &cb_args);
     ZF_LOGF_IF(ret != 0, "NFS Mount failed: %s", nfs_get_error(nfs));
+
+    // wait until nfs_mount_cb finished. This ensure that we can safely call init_page_swap after
+    seL4_Wait(ntfn, NULL);
+
+    // free up allocations for ntfn
+    seL4_Error del_error = cspace_delete(cspace, ntfn);
+    if (del_error != seL4_NoError) {
+        ZF_LOGF("Failed to delete ntfn cap, seL4_Error = %d", del_error);
+    }
+    cspace_free_slot(cspace, ntfn);
+    ut_free(ut);
 }
 
 void nfs_mount_cb(int status, UNUSED struct nfs_context *nfs, void *data,
-                  UNUSED void *private_data)
+                  void *private_data)
 {
     if (status < 0) {
         ZF_LOGF("mount/mnt call failed with \"%s\"\n", (char *)data);
     }
 
     printf("Mounted nfs dir %s\n", nfs_dir_buf);
+
+    seL4_Signal(((nfs_mount_cb_args_t*)private_data)->ntfn);
 }
