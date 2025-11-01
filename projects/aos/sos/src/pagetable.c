@@ -115,7 +115,7 @@ static seL4_Error create_pt(pt_t** source_pt, seL4_Word vaddr, cspace_t *cspace,
         return seL4_NotEnoughMemory;
     }
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
-        pt->frame_metadatas[i] = NULL;
+        pt->page_metadatas[i] = NULL;
     }
 
     seL4_Error err = map_page_object(&pt->slot, pt->ut, vaddr, cspace, user_process, PAGE_TABLE_NAME);
@@ -130,7 +130,7 @@ static seL4_Error create_pt(pt_t** source_pt, seL4_Word vaddr, cspace_t *cspace,
 
 seL4_Error sos_shadow_map_frame(   
     uintptr_t vaddr, 
-    frame_metadata_t *frame_metadata, 
+    page_metadata_t *frame_metadata, 
     cspace_t *cspace,
     user_process_t *user_process,
     seL4_CapRights_t rights, 
@@ -181,7 +181,7 @@ seL4_Error sos_shadow_map_frame(
         return err;
     }
 
-    pt->frame_metadatas[pt_index] = frame_metadata;
+    pt->page_metadatas[pt_index] = frame_metadata;
     return seL4_NoError;
 }
 
@@ -209,9 +209,9 @@ int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace) {
         return -1;
     }
 
-    frame_metadata_t *frame;
-    frame = pt->frame_metadatas[pt_index];
-    pt->frame_metadatas[pt_index] = NULL;
+    page_metadata_t *frame;
+    frame = pt->page_metadatas[pt_index];
+    pt->page_metadatas[pt_index] = NULL;
 
     if (!frame) {
         ZF_LOGE("Unable to find the mapped page at vaddr=%p", (void*)vaddr);
@@ -235,7 +235,7 @@ int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace) {
     return 0;
 }
 
-frame_metadata_t *find_frame(uintptr_t vaddr, pgd_t *pgd) {
+page_metadata_t *find_frame(uintptr_t vaddr, pgd_t *pgd) {
     size_t pgd_index = get_pgd_bits(vaddr);
     size_t pud_index = get_pud_bits(vaddr);
     size_t pd_index = get_pd_bits(vaddr);
@@ -259,12 +259,12 @@ frame_metadata_t *find_frame(uintptr_t vaddr, pgd_t *pgd) {
         return NULL;
     }
 
-    return pt->frame_metadatas[pt_index];
+    return pt->page_metadatas[pt_index];
 }
 
 unsigned char* find_frame_data(uintptr_t vaddr, pgd_t *pgd) {
     // find the frame associated with this buf_vaddr
-    frame_metadata_t *frame = find_frame(vaddr, pgd);
+    page_metadata_t *frame = find_frame(vaddr, pgd);
     if (!frame) {
         ZF_LOGE("page not found for vaddr=%p\n", (void*)vaddr);
         return NULL;
