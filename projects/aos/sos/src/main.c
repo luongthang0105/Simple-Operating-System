@@ -51,6 +51,7 @@
 #include "vm_region.h"
 #include <nfsc/libnfs.h>
 #include "fcntl.h"
+#include "page_swap.h"
 // #include "syscall_handlers/syscall_handlers.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
@@ -137,14 +138,14 @@ static size_t copy_from_user(void* to, const void* from, size_t nbyte) {
     
     char *temp = (char*) to;
     while (rem_bytes > 0) {
-        frame_metadata_t *frame = find_frame(from_vaddr, user_process.page_global_directory);
-        if (!frame) {
-            ZF_LOGE("Unable to find a frame for buf_vaddr at %p", from_vaddr);
+        page_metadata_t *page = find_page(from_vaddr, user_process.page_global_directory);
+        if (!page) {
+            ZF_LOGE("Unable to find a page for buf_vaddr at %p", (void *)from_vaddr);
             return bytes_copied;
         }
 
         // source data of the "from" buf
-        unsigned char* source_data = frame_data(frame->frame_ref);
+        unsigned char* source_data = frame_data(page->frame_ref);
 
         size_t offset = from_vaddr % PAGE_SIZE_4K;
         size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
@@ -167,8 +168,8 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
     size_t bytes_copied = 0;
     uintptr_t to_vaddr = (uintptr_t) to;
     while (rem_bytes > 0) {
-        frame_metadata_t *frame = find_frame(to_vaddr, user_process.page_global_directory);
-        if (!frame) {
+        page_metadata_t *page = find_page(to_vaddr, user_process.page_global_directory);
+        if (!page) {
             ZF_LOGI("vaddr %p is not mapped to any frame, trying to allocate frame...", (void*)to_vaddr);
             vm_region_t *valid_region = find_valid_region(to_vaddr, BIT(6), user_process.vm_regions);
 
@@ -177,7 +178,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
                 return 0;
             }
             
-            int result = allocate_new_frame(&cspace, to_vaddr, &user_process, valid_region->permission);
+            int result = alloc_map_frame(&cspace, to_vaddr, &user_process, valid_region->rights);
             if (result != 0) {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)to_vaddr);
                 return 0;
@@ -188,7 +189,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
         }
 
         // source data of the "to" buf
-        unsigned char* source_data = frame_data(frame->frame_ref);
+        unsigned char* source_data = frame_data(page->frame_ref);
 
         size_t offset = to_vaddr % PAGE_SIZE_4K;
         size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
@@ -295,7 +296,7 @@ void handler_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index) {
     uintptr_t stat_buf_vaddr    = seL4_GetMR(3);
 
     char *temp_path_buf = malloc(path_len);
-    size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
+    size_t nbyte = copy_from_user((void *)temp_path_buf, (void *)path_vaddr, path_len);
 
     if (strcmp(temp_path_buf, "..") == 0) {
         free(temp_path_buf);
@@ -354,7 +355,7 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;        
     }
 
-    size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
+    size_t nbyte = copy_from_user((void *)temp_path_buf, (void *)path_vaddr, path_len);
 
     if (strcmp(temp_path_buf, "console") == 0) {
         free(temp_path_buf);
@@ -529,7 +530,7 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
 
     if (user_process.vfs->fd_table[file_desc].mode != O_WRONLY && 
         user_process.vfs->fd_table[file_desc].mode != O_RDWR) {
-        ZF_LOGE("File %d is not open to write!", file_desc);
+        ZF_LOGE("File %zu is not open to write!", file_desc);
         seL4_SetMR(0, -1);
         return;
     }
@@ -677,7 +678,7 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
         nwcs_reader = -1;
         seL4_SetMR(0, bytes_read);
 
-        copy_to_user(buf_vaddr, temp_buf, nbytes);
+        copy_to_user((void *)buf_vaddr, (void *)temp_buf, nbytes);
 
         free(temp_buf);
         return;
@@ -737,7 +738,7 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
         uintptr_t next_page_vaddr_to_alloc = ROUND_UP(curr_brk, PAGE_SIZE_4K);
     
         while (next_page_vaddr_to_alloc < new_brk) {
-            int result = allocate_new_frame(&cspace, next_page_vaddr_to_alloc, &user_process, user_process.heap_region->permission);
+            int result = alloc_map_frame(&cspace, next_page_vaddr_to_alloc, &user_process, user_process.heap_region->rights);
             if (result != 0) {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)next_page_vaddr_to_alloc);
                 seL4_SetMR(0, 0);
@@ -886,37 +887,40 @@ void write_to_buf(UNUSED struct network_console *network_console, char c) {
         seL4_Signal(worker_threads[nwcs_reader]->ntfn);
     }
 }
-void handle_vm_fault(seL4_Fault_t fault, seL4_MessageInfo_t *reply_msg, bool *have_reply) {
+int handle_vm_fault(seL4_Fault_t fault) {
+    // get the vaddr and action of this fault
     uintptr_t faultaddr = ROUND_DOWN(seL4_Fault_VMFault_get_Addr(fault), PAGE_SIZE_4K);
     seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
-    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+
+    // find the vm_region that this faultaddr lies within
     vm_region_t *valid_region = find_valid_region(faultaddr, fsr, user_process.vm_regions);
     if (valid_region == NULL) {
         ZF_LOGE("Fault address %p resolves to an invalid region access", (void*)faultaddr);
-        *have_reply = false; // don't reply to the user process if the fault vaddr is invalid
-        return;
+        return -1;
     }
     
-    int result = allocate_new_frame(&cspace, faultaddr, &user_process, valid_region->permission);
-    if (result != 0) {
-        ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)faultaddr);
-        *have_reply = false;
-        return;
+    // find the associated page of this faultaddr
+    page_metadata_t *page = find_page(faultaddr, user_process.page_global_directory);
+    if (page != NULL) { /* page is either on disk or in memory */
+        if (page->pagefile_offset != -1) {   /* page is on disk */
+            return swap_to_mem(page);
+        } else {                             /* page is still in memory */
+            return reference_page(page, user_process.vspace, faultaddr, valid_region->rights);
+        }
+    } else { /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
+        return alloc_map_frame(&cspace, faultaddr, &user_process, valid_region->rights);
     }
-
-    *have_reply = true;
-    seL4_SetMR(0, 0);
-    return;
 }
 
 seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply) {
-    seL4_MessageInfo_t reply_msg;
+    seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+    int ret = -1; /* by default, the return value from fault handler equals -1, so we don't reply to fault that hasn't been handled */
     seL4_Fault_t fault = seL4_getFault(tag);
     seL4_Uint64 fault_type = seL4_Fault_get_seL4_FaultType(fault);
 
     switch (fault_type) {
         case seL4_Fault_VMFault:
-            handle_vm_fault(fault, &reply_msg, have_reply);
+            ret = handle_vm_fault(fault);
             break;
         default:
             /* some kind of fault */
@@ -924,12 +928,17 @@ seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply) {
             /* dump registers too */
             debug_dump_registers(user_process.tcb);
 
-            reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
             ZF_LOGE("Unknown fault %lu\n", fault_type);
-            /* Don't reply to an unknown fault */
-            *have_reply = false;
             break;
     }
+
+    if (ret == 0) {
+        *have_reply = true;
+        seL4_SetMR(0, 0);
+    } else {
+        *have_reply = false;
+    }
+    
     return reply_msg;
 }
 
@@ -1002,9 +1011,9 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     }
 
     /* allocate a stack frame for the user application*/
-    seL4_Error err = allocate_new_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
-    frame_metadata_t *frame_metadata = find_frame(stack_bottom, user_process.page_global_directory);
-    user_process.stack = frame_metadata->frame_cap;
+    seL4_Error err = alloc_map_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
+    page_metadata_t *page = find_page(stack_bottom, user_process.page_global_directory);
+    user_process.stack = page->frame_cap;
 
     /* allocate a slot to duplicate the stack frame cap so we can map it into our address space */
     seL4_CPtr local_stack_cptr = cspace_alloc_slot(cspace);
@@ -1081,7 +1090,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     /* Exend the stack with extra pages */
     for (int page = 0; page < INITIAL_PROCESS_STACK_PAGES; page++) {
         stack_bottom -= PAGE_SIZE_4K;
-        int result = allocate_new_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
+        int result = alloc_map_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
         if (result != 0) {
             ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)stack_bottom);
             return 0;
@@ -1146,7 +1155,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     list_init(user_process.vm_regions);
 
     /* Create an IPC buffer */
-    err = allocate_new_frame(&cspace, PROCESS_IPC_BUFFER, &user_process, seL4_AllRights);
+    err = alloc_map_frame(&cspace, PROCESS_IPC_BUFFER, &user_process, seL4_AllRights);
     if (err != 0) {
         ZF_LOGE("Unable to map IPC buffer for user app");
         return false;
@@ -1160,8 +1169,8 @@ bool start_first_process(char *app_name, seL4_CPtr ep)
     }
 
     /* Saves the IPC buffer capability */
-    frame_metadata_t *frame_metadata = find_frame(PROCESS_IPC_BUFFER, user_process.page_global_directory);
-    user_process.ipc_buffer = frame_metadata->frame_cap;
+    page_metadata_t *page_metadata = find_page(PROCESS_IPC_BUFFER, user_process.page_global_directory);
+    user_process.ipc_buffer = page_metadata->frame_cap;
 
     /* allocate a new slot in the target cspace which we will mint a badged endpoint cap into --
      * the badge is used to identify the process, which will come in handy when you have multiple

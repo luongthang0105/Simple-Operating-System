@@ -83,14 +83,29 @@ seL4_Error map_frame(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPtr vspace, se
  * */
 void *sos_map_device(cspace_t *cspace, uintptr_t addr, size_t size);
 
-/* Maps a page, allocating intermediate structures and cslots with the cspace provided.
+/* Allocate a new frame then map a page to that frame, allocating intermediate structures and cslots with the cspace provided.
  * Any intermediate structures, frames, cptrs allocated are saved, so that they can be deleted in the future.
  *
  * @param cspace          CSpace which can be used to allocate slots for intermediate paging structures.
- * @param vspace          A capability to the vspace (seL4_ARM_PageGlobalDirectoryObject).
+ * @param vaddr           The virtual address to map the frame.
  * @param user_process    The user process that wants to map a frame.
- * @param permissions     The permissions of the mapping
+ * @param rights          The access rights for the mapping
  *
  * @return 0 on success
  */
-seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t permission);
+seL4_Error alloc_map_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t rights);
+
+/* Unmap a page from its associated frame and deallocate all related resources,
+ * including the frame capability, cspace slot, and the physical frame itself.
+ * This function is the counterpart of alloc_map_frame() and should be used
+ * when a page is no longer needed in memory.
+ *
+ * @param cspace      CSpace used to manage capability slots and perform
+ *                    capability deletion.
+ * @param page        The page metadata structure that contains information
+ *                    about the mapped frame and its capability.
+ *
+ * @return 0 on success, or a seL4 error code if the unmapping or deletion fails.
+ */
+seL4_Error dealloc_unmap_frame(cspace_t *cspace, page_metadata_t *page);
+

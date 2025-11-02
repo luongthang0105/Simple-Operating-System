@@ -69,6 +69,7 @@ add_executable(
     src/pagetable.c
     src/vm_region.c
     src/vfs.c
+    src/page_swap.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(

@@ -82,7 +82,7 @@ static int load_segment_into_vspace(cspace_t *cspace, const char *src, size_t se
     while (pos < segment_size) {
         uintptr_t loadee_vaddr = (ROUND_DOWN(dst, PAGE_SIZE_4K));
 
-        err = allocate_new_frame(cspace, loadee_vaddr, user_process, permissions);
+        err = alloc_map_frame(cspace, loadee_vaddr, user_process, permissions);
         /* A frame has already been mapped at this address. This occurs when segments overlap in
          * the same frame, which is permitted by the standard. That's fine as we
          * leave all the frames mapped in, and this one is already mapped. 
@@ -96,10 +96,10 @@ static int load_segment_into_vspace(cspace_t *cspace, const char *src, size_t se
             return -1;
         }
 
-        frame_metadata_t *frame_metadata = find_frame(loadee_vaddr, user_process->page_global_directory);
+        page_metadata_t *page_metadata = find_page(loadee_vaddr, user_process->page_global_directory);
         
         /* finally copy the data */
-        unsigned char *loader_data = frame_data(frame_metadata->frame_ref);
+        unsigned char *loader_data = frame_data(page_metadata->frame_ref);
 
         /* Write any zeroes at the start of the block. */
         size_t leading_zeroes = dst % PAGE_SIZE_4K;

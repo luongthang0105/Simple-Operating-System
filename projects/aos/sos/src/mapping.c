@@ -127,7 +127,7 @@ static seL4_Error map_frame_impl(cspace_t *cspace, seL4_CPtr frame_cap, seL4_CPt
 }
 static seL4_Error sos_map_frame(
     cspace_t *cspace, 
-    frame_metadata_t *frame_metadata,
+    page_metadata_t *page_metadata,
     seL4_Word vaddr,
     seL4_CapRights_t rights, 
     seL4_ARM_VMAttributes attr, 
@@ -141,10 +141,10 @@ static seL4_Error sos_map_frame(
         return seL4_InvalidArgument;
     }
 
-    return sos_shadow_map_frame(vaddr, frame_metadata, cspace, user_process, rights, attr);
+    return sos_shadow_map_frame(vaddr, page_metadata, cspace, user_process, rights, attr);
 }
 
-seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t permission) {
+seL4_Error init_frame_metadata(cspace_t *cspace, frame_ref_t *out_frame, seL4_CPtr *out_frame_cptr, seL4_CapRights_t rights) {
     frame_ref_t frame = alloc_frame();
     if (frame == NULL_FRAME) {
         ZF_LOGE("Couldn't allocate additional frame");
@@ -160,7 +160,7 @@ seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t 
     }
 
     /* copy the frame cap into the slot */
-    seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), permission);
+    seL4_Error err = cspace_copy(cspace, frame_cptr, cspace, frame_page(frame), rights);
     if (err != seL4_NoError) {
         cspace_free_slot(cspace, frame_cptr);
         free_frame(frame);
@@ -168,19 +168,37 @@ seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t 
         return err;
     }
 
-    frame_metadata_t *frame_metadata = malloc(sizeof(frame_metadata_t));
-    if (!frame_metadata) {
-        ZF_LOGE("Failed to allocate memory for frame_metadata");
+    *out_frame = frame;
+    *out_frame_cptr = frame_cptr;
+    return seL4_NoError;
+}
+
+seL4_Error alloc_map_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *user_process, seL4_CapRights_t rights) {
+    frame_ref_t frame;
+    seL4_CPtr frame_cptr;
+
+    seL4_Error err = init_frame_metadata(cspace, &frame, &frame_cptr, rights);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Couldn't initialise frame metadata");
+        return err;
+    }
+
+    page_metadata_t *page_metadata = malloc(sizeof(page_metadata_t));
+    if (!page_metadata) {
+        ZF_LOGE("Failed to allocate memory for page_metadata");
         return seL4_NotEnoughMemory;
     }
 
-    frame_metadata->frame_ref = frame;
-    frame_metadata->frame_cap = frame_cptr;
+    page_metadata->frame_ref = frame;
+    page_metadata->frame_cap = frame_cptr;
+    page_metadata->reference_bit = 1;
+    page_metadata->pagefile_offset = -1;
 
     uintptr_t aligned_vaddr = PAGE_ALIGN_4K(vaddr); /* seL4 page map methods only accepts vaddr that aligns with the size of a Page (4KB) */
 
-    err = sos_map_frame(cspace, frame_metadata, aligned_vaddr,
-                    seL4_AllRights, seL4_ARM_Default_VMAttributes, user_process);
+    err = sos_map_frame(cspace, page_metadata, aligned_vaddr,
+                    rights, seL4_ARM_Default_VMAttributes, user_process);
+    
     if (err != seL4_NoError) {
         // delete the cap and free the allocated slot
         cspace_delete(cspace, frame_cptr);
@@ -189,12 +207,30 @@ seL4_Error allocate_new_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t 
         // free a physical frame
         free_frame(frame);
 
-        // free the frame_metadata
-        free(frame_metadata);
+        // free the page_metadata
+        free(page_metadata);
 
         ZF_LOGE("Unable to map extra frame for user app, seL4_Error = %d\n", err);
         return err;
     }
+
+    return seL4_NoError;
+}
+
+seL4_Error dealloc_unmap_frame(cspace_t *cspace, page_metadata_t *page) {
+    seL4_Error err = seL4_ARM_Page_Unmap(page->frame_cap);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Unable to unmap the page when deallocating the frames");
+        return err;
+    }
+
+    err = cspace_delete(cspace, page->frame_cap);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Unable to delete the copy of the frame cap");
+        return err;
+    }
+    cspace_free_slot(cspace, page->frame_cap);
+    free_frame(page->frame_ref);
 
     return seL4_NoError;
 }
