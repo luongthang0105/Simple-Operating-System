@@ -178,7 +178,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
                 return 0;
             }
             
-            int result = alloc_map_frame(&cspace, to_vaddr, &user_process, valid_region->permission);
+            int result = alloc_map_frame(&cspace, to_vaddr, &user_process, valid_region->rights);
             if (result != 0) {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)to_vaddr);
                 return 0;
@@ -738,7 +738,7 @@ void handler_sos_brk(seL4_MessageInfo_t *reply_msg) {
         uintptr_t next_page_vaddr_to_alloc = ROUND_UP(curr_brk, PAGE_SIZE_4K);
     
         while (next_page_vaddr_to_alloc < new_brk) {
-            int result = alloc_map_frame(&cspace, next_page_vaddr_to_alloc, &user_process, user_process.heap_region->permission);
+            int result = alloc_map_frame(&cspace, next_page_vaddr_to_alloc, &user_process, user_process.heap_region->rights);
             if (result != 0) {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)next_page_vaddr_to_alloc);
                 seL4_SetMR(0, 0);
@@ -901,15 +901,15 @@ int handle_vm_fault(seL4_Fault_t fault) {
     
     // find the associated page of this faultaddr
     page_metadata_t *page = find_page(faultaddr, user_process.page_global_directory);
-    if (page != NULL) {
-        if (page->pagefile_offset != -1) {   /* page currently on disk */
+    if (page != NULL) { /* page is either on disk or in memory */
+        if (page->pagefile_offset != -1) {   /* page is on disk */
             return swap_to_mem(page);
-        } else {                    /* page currently still in memory */
-            return reference_page(page, user_process.vspace, faultaddr, valid_region->permission);
+        } else {                             /* page is still in memory */
+            return reference_page(page, user_process.vspace, faultaddr, valid_region->rights);
         }
+    } else { /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
+        return alloc_map_frame(&cspace, faultaddr, &user_process, valid_region->rights);
     }
-
-    return alloc_map_frame(&cspace, faultaddr, &user_process, valid_region->permission);
 }
 
 seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply) {
