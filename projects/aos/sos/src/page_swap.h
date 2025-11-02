@@ -14,6 +14,7 @@ frame_t *evict_page();
  *  starting at the given offset, and writes that content to the freed frame
  *
  *  @param page   page that is about to be swapped from disk to memory 
+ *  @return 0 on success.
  */
 int swap_to_mem(page_metadata_t *page);
 

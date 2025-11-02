@@ -31,6 +31,8 @@ int swap_to_mem(page_metadata_t *page) {
     page->reference_bit = 1;
     page->pagefile_offset = -1;
     sglib_pages_queue_t_add(&in_memory_pages, page);
+    
+    return 0;
 }
 
 frame_t *evict_page(cspace_t *cspace) {
