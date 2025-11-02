@@ -21,6 +21,10 @@
         "sel4runtime.h": "c",
         "gen_config.h": "c",
         "cstring": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "vmem_layout.h": "c",
+        "user_process.h": "c",
+        "page_swap.h": "c",
+        "util.h": "c"
     }
 }
