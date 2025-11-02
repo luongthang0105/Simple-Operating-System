@@ -13,7 +13,7 @@
 const size_t OFFSET_QUEUE_MAX_SIZE = (1 << 19);
 #endif
 
-extern cspace_t *cspace;
+extern cspace_t cspace;
 struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
 struct nfs_context *nfs;
 
@@ -27,9 +27,6 @@ typedef struct nfs_pwrite_cb_args {
     size_t bytes_written;
 } nfs_pwrite_cb_args_t;
 static void nfs_pwrite_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
-
-
-extern cspace_t cspace;
 
 typedef struct pages_queue
 {
