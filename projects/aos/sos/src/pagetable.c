@@ -130,7 +130,7 @@ static seL4_Error create_pt(pt_t** source_pt, seL4_Word vaddr, cspace_t *cspace,
 
 seL4_Error sos_shadow_map_frame(   
     uintptr_t vaddr, 
-    page_metadata_t *frame_metadata, 
+    page_metadata_t *page_metadata, 
     cspace_t *cspace,
     user_process_t *user_process,
     seL4_CapRights_t rights, 
@@ -175,13 +175,13 @@ seL4_Error sos_shadow_map_frame(
     }
     pt = pd->page_tables[pd_index];
 
-    err = seL4_ARM_Page_Map(frame_metadata->frame_cap, user_process->vspace, vaddr, rights, attr);
+    err = seL4_ARM_Page_Map(page_metadata->frame_cap, user_process->vspace, vaddr, rights, attr);
     if (err != seL4_NoError) {
         ZF_LOGE("Unable to perform page map. seL4_Error = %d", err);
         return err;
     }
 
-    pt->page_metadatas[pt_index] = frame_metadata;
+    pt->page_metadatas[pt_index] = page_metadata;
     return seL4_NoError;
 }
 
@@ -209,28 +209,28 @@ int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace) {
         return -1;
     }
 
-    page_metadata_t *frame;
-    frame = pt->page_metadatas[pt_index];
+    page_metadata_t *page;
+    page = pt->page_metadatas[pt_index];
     pt->page_metadatas[pt_index] = NULL;
 
-    if (!frame) {
+    if (!page) {
         ZF_LOGE("Unable to find the mapped page at vaddr=%p", (void*)vaddr);
         return -1;
     }
 
-    seL4_Error err = seL4_ARM_Page_Unmap(frame->frame_cap);
+    seL4_Error err = seL4_ARM_Page_Unmap(page->frame_cap);
     if (err != seL4_NoError) {
         ZF_LOGE("Unable to unmap the page when deallocating the frames");
         return -1;
     }
 
-    err = cspace_delete(cspace, frame->frame_cap);
+    err = cspace_delete(cspace, page->frame_cap);
     if (err != seL4_NoError) {
         ZF_LOGE("Unable to delete the copy of the frame cap");
         return -1;
     }
-    cspace_free_slot(cspace, frame->frame_cap);
-    free_frame(frame->frame_ref);
+    cspace_free_slot(cspace, page->frame_cap);
+    free_frame(page->frame_ref);
 
     return 0;
 }
