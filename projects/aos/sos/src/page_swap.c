@@ -39,14 +39,14 @@ typedef struct pages_queue
 It should always have at least one item in it, which is the offset to the end of the file.
 The initial item in the queue is offset 0.
 */
-typedef struct offset_queue {
+typedef struct free_pagefile_offsets {
     size_t arr[OFFSET_QUEUE_MAX_SIZE];
     size_t i;
     size_t j;
 } offset_queue_t;
 
 pages_queue_t in_memory_pages;
-offset_queue_t offset_queue;
+offset_queue_t free_pagefile_offsets;
 
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
 SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
@@ -70,11 +70,11 @@ int swap_to_mem(page_metadata_t *page) {
 static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
     unsigned char* frame_content = frame_data(page_metadata->frame_ref);
     // offset to the available space in pagefile
-    size_t available_offset = sglib_offset_queue_t_first_element(&offset_queue);
-    sglib_offset_queue_t_delete_first(&offset_queue);
+    size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
+    sglib_offset_queue_t_delete_first(&free_pagefile_offsets);
 
     // add the next available offset
-    sglib_offset_queue_t_add(&offset_queue, available_offset + PAGE_SIZE_4K);
+    sglib_offset_queue_t_add(&free_pagefile_offsets, available_offset + PAGE_SIZE_4K);
 
     // write content to pagefile at offset, must ensure all bytes are written
     size_t total_bytes_written = 0;
@@ -142,7 +142,7 @@ seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vad
 
 void init_page_swap() {
     nfs = get_nfs_context();
-    sglib_offset_queue_t_add(&offset_queue, 0);
+    sglib_offset_queue_t_add(&free_pagefile_offsets, 0);
 
     // allocate a ntfn to wait till pagefile finished opening
     seL4_CPtr ntfn;
