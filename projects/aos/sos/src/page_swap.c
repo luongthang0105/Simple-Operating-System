@@ -58,13 +58,13 @@ offset_queue_t free_pagefile_offsets;
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
 SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
 
-int swap_to_mem(page_metadata_t *page) {
+int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn) {
     // read the content of this page from the disk
 
     // get the freed frame
     
     // write the content of this page to the frame
-    // write_page_to_disk(page);
+    // write_to_pagefile(/*the page metadata of the page that gets evicted*/, ntfn);
 
     // update reference bit and offset
     page->reference_bit = 1;
@@ -74,6 +74,17 @@ int swap_to_mem(page_metadata_t *page) {
     return 0;
 }
 
+/**
+ *  Read the content of the given page, and write it to the disk.
+ *
+ *  This function reads the data from the associated frame of the page, 
+ *  writes that data to the pagefile starting at the available offset,
+ *  then store this offset in the page metada.
+ *
+ *  @param page_metadata    page that has the content to be put in the disk
+ *  @param ntfn             notification cap from worker thread to wait until write operation finished
+ * 
+ */
 static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
     unsigned char* frame_content = frame_data(page_metadata->frame_ref);
     // offset to the available space in pagefile

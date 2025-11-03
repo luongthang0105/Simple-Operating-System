@@ -903,7 +903,7 @@ int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
     page_metadata_t *page = find_page(faultaddr, user_process.page_global_directory);
     if (page != NULL) { /* page is either on disk or in memory */
         if (page->pagefile_offset != -1) {   /* page is on disk */
-            return swap_to_mem(page);
+            return swap_to_mem(page, worker_thread_ntfn);
         } else {                             /* page is still in memory */
             return reference_page(page, user_process.vspace, faultaddr, valid_region->rights);
         }
