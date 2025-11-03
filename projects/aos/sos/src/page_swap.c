@@ -17,23 +17,23 @@ extern cspace_t cspace;
 struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
 struct nfs_context *nfs;
 
-typedef struct nfs_open_cb_args {
+typedef struct nfs_open_pagefile_cb_args {
     seL4_CPtr ntfn;
-} nfs_open_cb_args_t;
-static void nfs_open_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
+} nfs_open_pagefile_cb_args_t;
+static void nfs_open_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
 
-typedef struct nfs_pwrite_cb_args {
+typedef struct nfs_pwrite_pagefile_cb_args {
     seL4_CPtr ntfn;
     size_t bytes_written;
-} nfs_pwrite_cb_args_t;
-static void nfs_pwrite_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
+} nfs_pwrite_pagefile_cb_args_t;
+static void nfs_pwrite_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
 
-typedef struct nfs_pread_cb_args {
+typedef struct nfs_pread_pagefile_cb_args {
     seL4_CPtr ntfn;
     size_t bytes_read;
     unsigned char* buf;
-} nfs_pread_cb_args_t;
-static void nfs_pread_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
+} nfs_pread_pagefile_cb_args_t;
+static void nfs_pread_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
 
 typedef struct pages_queue
 {
@@ -96,7 +96,7 @@ static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
 
     // write content to pagefile at offset, must ensure all bytes are written
     size_t total_bytes_written = 0;
-    nfs_pwrite_cb_args_t pwrite_cb_args = {.ntfn = ntfn};
+    nfs_pwrite_pagefile_cb_args_t pwrite_cb_args = {.ntfn = ntfn};
     
     while (total_bytes_written < PAGE_SIZE_4K) {
         size_t bytes_to_write = PAGE_SIZE_4K - total_bytes_written;
@@ -104,7 +104,7 @@ static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
 
         int ret = nfs_pwrite_async( nfs, pagefile_fh, offset, bytes_to_write, 
                                     (const void*)(frame_content + total_bytes_written), 
-                                    nfs_pwrite_cb, &pwrite_cb_args); 
+                                    nfs_pwrite_pagefile_cb, &pwrite_cb_args); 
         ZF_LOGF_IF(ret != 0, "queuing pwrite pagefile failed: %s", nfs_get_error(nfs));
         
         seL4_Wait(ntfn, NULL);
@@ -128,7 +128,7 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
     size_t pagefile_offset = page_metadata->pagefile_offset;
 
     size_t total_bytes_read = 0;
-    nfs_pread_cb_args_t pread_cb_args = {.ntfn = ntfn};
+    nfs_pread_pagefile_cb_args_t pread_cb_args = {.ntfn = ntfn};
     
     while (total_bytes_read < PAGE_SIZE_4K) {
         size_t bytes_to_read = PAGE_SIZE_4K - total_bytes_read;
@@ -136,7 +136,7 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
 
         pread_cb_args.buf = buf + total_bytes_read;
 
-        int ret = nfs_pread_async(nfs, pagefile_fh, offset, bytes_to_read, nfs_pread_cb, &pread_cb_args);
+        int ret = nfs_pread_async(nfs, pagefile_fh, offset, bytes_to_read, nfs_pread_pagefile_cb, &pread_cb_args);
         ZF_LOGF_IF(ret != 0, "queuing pread pagefile failed: %s", nfs_get_error(nfs));
         
         seL4_Wait(ntfn, NULL);
@@ -196,8 +196,8 @@ void init_page_swap() {
     ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
     ZF_LOGF_IF(!ut, "No memory for notification object");
 
-    nfs_open_cb_args_t cb_args = {.ntfn = ntfn};
-    int ret = nfs_open_async(nfs, "pagefile", O_RDWR | O_CREAT, nfs_open_cb, &cb_args); 
+    nfs_open_pagefile_cb_args_t cb_args = {.ntfn = ntfn};
+    int ret = nfs_open_async(nfs, "pagefile", O_RDWR | O_CREAT, nfs_open_pagefile_cb, &cb_args); 
     ZF_LOGF_IF(ret != 0, "queuing open pagefile failed: %s", nfs_get_error(nfs));
 
     seL4_Wait(ntfn, NULL);
@@ -211,36 +211,36 @@ void init_page_swap() {
     ut_free(ut);
 }
 
-void nfs_open_cb(int status, UNUSED struct nfs_context *nfs, void *data,
+void nfs_open_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data,
                  UNUSED void *private_data) {
     if (status < 0) {
         ZF_LOGF("open pagefile failed with \"%s\"\n", (char *)data);
     }
 
-    seL4_Signal(((nfs_open_cb_args_t*)private_data)->ntfn);
+    seL4_Signal(((nfs_open_pagefile_cb_args_t*)private_data)->ntfn);
     pagefile_fh = (struct nfsfh*)data;
 }
 
-void nfs_pwrite_cb(int status, UNUSED struct nfs_context *nfs, void *data, 
+void nfs_pwrite_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data, 
                   UNUSED void *private_data)
 {
     if (status < 0) {
         ZF_LOGF("pwrite to pagefile failed with \"%s\"\n", (char *)data);
     }
 
-    nfs_pwrite_cb_args_t *args = private_data;
+    nfs_pwrite_pagefile_cb_args_t *args = private_data;
     args->bytes_written = status;
     seL4_Signal(args->ntfn);
 }
 
-void nfs_pread_cb(int status, UNUSED struct nfs_context *nfs, void *data, 
+void nfs_pread_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data, 
                   UNUSED void *private_data)
 {
     if (status < 0) {
         ZF_LOGF("pread to pagefile failed with \"%s\"\n", (char *)data);
     }
 
-    nfs_pread_cb_args_t *args = private_data;
+    nfs_pread_pagefile_cb_args_t *args = private_data;
     args->bytes_read = status;
     args->buf = data;
 
