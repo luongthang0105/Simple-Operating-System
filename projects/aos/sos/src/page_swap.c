@@ -28,6 +28,13 @@ typedef struct nfs_pwrite_cb_args {
 } nfs_pwrite_cb_args_t;
 static void nfs_pwrite_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
 
+typedef struct nfs_pread_cb_args {
+    seL4_CPtr ntfn;
+    size_t bytes_read;
+    unsigned char* buf;
+} nfs_pread_cb_args_t;
+static void nfs_pread_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data);
+
 typedef struct pages_queue
 {
     page_metadata_t *arr[PAGES_QUEUE_MAX_SIZE];
@@ -96,6 +103,35 @@ static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
 
     // save the offset to page_metadata
     page_metadata->pagefile_offset = available_offset;
+}
+
+/**
+ *  Read the content saved in pagefile, given the pagefile offset from page metadata.
+ *  Then, writes exactly one page of data to buf.
+ *
+ *  @param page_metadata    page that reads their saved content from disk
+ *  @param ntfn             notification cap from worker thread to wait until write operation finished
+ * 
+ */
+static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadata, seL4_CPtr ntfn) {
+    size_t pagefile_offset = page_metadata->pagefile_offset;
+
+    size_t total_bytes_read = 0;
+    nfs_pread_cb_args_t pread_cb_args = {.ntfn = ntfn};
+    
+    while (total_bytes_read < PAGE_SIZE_4K) {
+        size_t bytes_to_read = PAGE_SIZE_4K - total_bytes_read;
+        size_t offset = pagefile_offset + total_bytes_read;
+
+        pread_cb_args.buf = buf + total_bytes_read;
+
+        int ret = nfs_pread_async(nfs, pagefile_fh, offset, bytes_to_read, nfs_pread_cb, &pread_cb_args);
+        ZF_LOGF_IF(ret != 0, "queuing pread pagefile failed: %s", nfs_get_error(nfs));
+        
+        seL4_Wait(ntfn, NULL);
+        
+        total_bytes_read += pread_cb_args.bytes_read;
+    }
 }
 
 frame_t *evict_page() {
@@ -183,5 +219,19 @@ void nfs_pwrite_cb(int status, UNUSED struct nfs_context *nfs, void *data,
 
     nfs_pwrite_cb_args_t *args = private_data;
     args->bytes_written = status;
+    seL4_Signal(args->ntfn);
+}
+
+void nfs_pread_cb(int status, UNUSED struct nfs_context *nfs, void *data, 
+                  UNUSED void *private_data)
+{
+    if (status < 0) {
+        ZF_LOGF("pread to pagefile failed with \"%s\"\n", (char *)data);
+    }
+
+    nfs_pread_cb_args_t *args = private_data;
+    args->bytes_read = status;
+    args->buf = data;
+
     seL4_Signal(args->ntfn);
 }
