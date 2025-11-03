@@ -60,7 +60,7 @@
 #include <aos/vsyscall.h>
 #include "backtrace.h"
 #include <nfsc/libnfs.h>
-
+#include "page_swap.h"
 /*
  * To differentiate between signals from notification objects and and IPC messages,
  * we assign a badge to the notification object. The badge that we receive will
@@ -887,7 +887,7 @@ void write_to_buf(UNUSED struct network_console *network_console, char c) {
         seL4_Signal(worker_threads[nwcs_reader]->ntfn);
     }
 }
-int handle_vm_fault(seL4_Fault_t fault) {
+int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
     // get the vaddr and action of this fault
     uintptr_t faultaddr = ROUND_DOWN(seL4_Fault_VMFault_get_Addr(fault), PAGE_SIZE_4K);
     seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
@@ -903,7 +903,7 @@ int handle_vm_fault(seL4_Fault_t fault) {
     page_metadata_t *page = find_page(faultaddr, user_process.page_global_directory);
     if (page != NULL) { /* page is either on disk or in memory */
         if (page->pagefile_offset != -1) {   /* page is on disk */
-            return swap_to_mem(page);
+            return swap_to_mem(page, worker_thread_ntfn);
         } else {                             /* page is still in memory */
             return reference_page(page, user_process.vspace, faultaddr, valid_region->rights);
         }
@@ -912,7 +912,7 @@ int handle_vm_fault(seL4_Fault_t fault) {
     }
 }
 
-seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply) {
+seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_CPtr worker_thread_ntfn) {
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
     int ret = -1; /* by default, the return value from fault handler equals -1, so we don't reply to fault that hasn't been handled */
     seL4_Fault_t fault = seL4_getFault(tag);
@@ -920,7 +920,7 @@ seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply) {
 
     switch (fault_type) {
         case seL4_Fault_VMFault:
-            ret = handle_vm_fault(fault);
+            ret = handle_vm_fault(fault, worker_thread_ntfn);
             break;
         default:
             /* some kind of fault */
@@ -981,7 +981,7 @@ NORETURN void syscall_loop(void* arg)
             reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply, thread_index);
         } else {
             /* Handle the fault */
-            reply_msg = handle_fault(message, &have_reply);
+            reply_msg = handle_fault(message, &have_reply, worker_threads[thread_index]->ntfn);
         }
     }
 }
@@ -1379,6 +1379,9 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* Initialize network console buffer */
     SGLIB_QUEUE_INIT(char, nwcs_buf, i, j);
     network_console_register_handler(network_console, write_to_buf);
+
+    /* Init page swap */
+    init_page_swap();
 
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
