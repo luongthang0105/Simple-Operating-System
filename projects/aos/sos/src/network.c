@@ -61,6 +61,7 @@
 #define DHCP_STATUS_FINISHED    1
 #define DHCP_STATUS_ERR         2
 
+bool has_init_network = false;
 static struct pico_device pico_dev;
 static struct nfs_context *nfs = NULL;
 static int dhcp_status = DHCP_STATUS_WAIT;
@@ -294,25 +295,8 @@ void network_init(cspace_t *cspace, void *timer_vaddr, seL4_CPtr irq_ntfn)
     nfs_set_debug(nfs, 10);
     sprintf(nfs_dir_buf, "%s-%d-root", SOS_NFS_DIR, ip_octet);
     
-    /* setting up ntfn to wait until nfs_mount_cb finished */
-    seL4_CPtr ntfn;
-    ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
-    ZF_LOGF_IF(!ut, "No memory for notification object");
-    nfs_mount_cb_args_t cb_args = {.ntfn = ntfn};
-
-    int ret = nfs_mount_async(nfs, CONFIG_SOS_GATEWAY, nfs_dir_buf, nfs_mount_cb, &cb_args);
+    int ret = nfs_mount_async(nfs, CONFIG_SOS_GATEWAY, nfs_dir_buf, nfs_mount_cb, NULL);
     ZF_LOGF_IF(ret != 0, "NFS Mount failed: %s", nfs_get_error(nfs));
-
-    // wait until nfs_mount_cb finished. This ensure that we can safely call init_page_swap after
-    seL4_Wait(ntfn, NULL);
-
-    // free up allocations for ntfn
-    seL4_Error del_error = cspace_delete(cspace, ntfn);
-    if (del_error != seL4_NoError) {
-        ZF_LOGF("Failed to delete ntfn cap, seL4_Error = %d", del_error);
-    }
-    cspace_free_slot(cspace, ntfn);
-    ut_free(ut);
 }
 
 void nfs_mount_cb(int status, UNUSED struct nfs_context *nfs, void *data,
@@ -323,6 +307,5 @@ void nfs_mount_cb(int status, UNUSED struct nfs_context *nfs, void *data,
     }
 
     printf("Mounted nfs dir %s\n", nfs_dir_buf);
-
-    seL4_Signal(((nfs_mount_cb_args_t*)private_data)->ntfn);
+    has_init_network = true;
 }
