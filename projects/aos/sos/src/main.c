@@ -125,6 +125,8 @@ struct sos_stat_callback_private_data {
 };
 
 struct network_console *network_console;
+extern bool has_init_network;
+extern bool has_init_page_swap;
 
 #define MAX_WORKER_THREADS  1
 static sos_thread_t* worker_threads[MAX_WORKER_THREADS];
@@ -1336,6 +1338,34 @@ void init_muslc(void)
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
 }
 
+void nfs_call_loop(seL4_CPtr ep, bool *condition_on_wait) {
+    /* Create reply object */
+    seL4_CPtr reply;
+    ut_t *reply_ut = alloc_retype(&reply, seL4_ReplyObject, seL4_ReplyBits);
+    if (reply_ut == NULL) {
+        ZF_LOGF("Failed to alloc reply object ut");
+    }
+
+    UNUSED bool have_reply = false;
+    while (!(*condition_on_wait)) { // waits for nfs_mount
+        seL4_Word badge = 0;
+        seL4_Recv(ep, &badge, reply);
+        if (badge & IRQ_EP_BADGE) {
+            /* It's a notification from our bound notification
+             * object! */
+            sos_handle_irq_notification(&badge, &have_reply);
+        }
+    }
+
+    // free reply object
+    seL4_Error del_error = cspace_delete(&cspace, reply);
+    if (del_error != seL4_NoError) {
+        ZF_LOGF("Failed to delete ntfn cap, seL4_Error = %d", del_error);
+    }
+    cspace_free_slot(&cspace, reply);
+    ut_free(reply_ut);
+}
+
 NORETURN void *main_continued(UNUSED void *arg)
 {
     /* Initialise other system compenents here */
@@ -1373,7 +1403,10 @@ NORETURN void *main_continued(UNUSED void *arg)
 
     /* Initialise the network hardware. */
     printf("Network init\n");
+    
     network_init(&cspace, timer_vaddr, ntfn);
+    nfs_call_loop(ipc_ep, &has_init_network);
+
     network_console = network_console_init();
 
     /* Initialize network console buffer */
@@ -1382,6 +1415,8 @@ NORETURN void *main_continued(UNUSED void *arg)
 
     /* Init page swap */
     init_page_swap();
+    nfs_call_loop(ipc_ep, &has_init_page_swap);
+
 
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
