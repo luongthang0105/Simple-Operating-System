@@ -110,7 +110,7 @@ int test_read_file_opened_with_write_mode() {
 int test_write_file_opened_with_write_mode() {
     fd = open("test_file_write.txt", O_WRONLY);
     char buf[BUF_SIZE] = "hello";
-    assert(write(fd, buf, BUF_SIZE) == 5);
+    assert(write(fd, buf, 5) == 5);
 
     close(fd); // clean up the state for the next test
 }
@@ -147,7 +147,7 @@ int test_file_system() {
     test_read_file_opened_with_write_mode();
 
     // write to file
-    // test_write_file_opened_with_write_mode();
+    test_write_file_opened_with_write_mode();
     // file stat
 
     printf("File system test\tPassed\n");

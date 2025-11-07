@@ -4,6 +4,7 @@
 #include "network.h"
 #include "fcntl.h"
 #include "mapping.h"
+#include "cap_utils.h"
 
 #ifdef CONFIG_SOS_FRAME_LIMIT
 #define PAGES_QUEUE_MAX_SIZE    ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : CONFIG_SOS_FRAME_LIMIT)
@@ -16,6 +17,8 @@ const size_t OFFSET_QUEUE_MAX_SIZE = (1 << 19);
 extern cspace_t cspace;
 struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
 struct nfs_context *nfs;
+bool has_init_page_swap = false;
+
 
 typedef struct nfs_open_pagefile_cb_args {
     seL4_CPtr ntfn;
@@ -60,11 +63,16 @@ SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX
 
 int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn) {
     // read the content of this page from the disk
+    unsigned char* buf[PAGE_SIZE_4K];
+    read_from_pagefile(buf, page);
 
     // get the freed frame
-    
+    frame_t *freed_frame = evict_page();
+    assert(!freed_frame);
+
     // write the content of this page to the frame
-    // write_to_pagefile(/*the page metadata of the page that gets evicted*/, ntfn);
+    memcpy(&temp[bytes_copied], &buf, PAGE_SIZE_4K);
+
 
     // update reference bit and offset
     page->reference_bit = 1;
@@ -82,10 +90,9 @@ int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn) {
  *  then store this offset in the page metada.
  *
  *  @param page_metadata    page that has the content to be put in the pagefile
- *  @param ntfn             notification cap from worker thread to wait until write operation finished
  * 
  */
-static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
+static void write_to_pagefile(page_metadata_t *page_metadata) {
     unsigned char* frame_content = frame_data(page_metadata->frame_ref);
     // offset to the available space in pagefile
     size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
@@ -96,6 +103,11 @@ static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
 
     // write content to pagefile at offset, must ensure all bytes are written
     size_t total_bytes_written = 0;
+
+    // create a notification object
+    seL4_CPtr ntfn;
+    ut_t *ut = create_cap(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
+
     nfs_pwrite_pagefile_cb_args_t pwrite_cb_args = {.ntfn = ntfn};
     
     while (total_bytes_written < PAGE_SIZE_4K) {
@@ -112,6 +124,9 @@ static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
         total_bytes_written += pwrite_cb_args.bytes_written;
     }
 
+    // free the notification object
+    free_cap(ut, ntfn);
+
     // save the offset to page_metadata
     page_metadata->pagefile_offset = available_offset;
 }
@@ -119,15 +134,20 @@ static void write_to_pagefile(page_metadata_t *page_metadata, seL4_CPtr ntfn) {
 /**
  *  Read the content saved in pagefile, given the pagefile offset from page metadata.
  *  Then, writes exactly one page of data to buf.
- *
- *  @param page_metadata    page that reads their saved content from pagefile
- *  @param ntfn             notification cap from worker thread to wait until write operation finished
+ *  
+ *  @param buf              buffer that will store the data read from the page
+ *  @param page_metadata    page metadata that has the offset of their saved content from pagefile
  * 
  */
-static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadata, seL4_CPtr ntfn) {
+static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadata) {
     size_t pagefile_offset = page_metadata->pagefile_offset;
 
     size_t total_bytes_read = 0;
+
+    // create a notification object
+    seL4_CPtr ntfn;
+    ut_t *ut = create_cap(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
+    
     nfs_pread_pagefile_cb_args_t pread_cb_args = {.ntfn = ntfn};
     
     while (total_bytes_read < PAGE_SIZE_4K) {
@@ -143,6 +163,9 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
         
         total_bytes_read += pread_cb_args.bytes_read;
     }
+
+    // free the notification object
+    free_cap(ut, ntfn);
 }
 
 frame_t *evict_page() {
@@ -161,7 +184,7 @@ frame_t *evict_page() {
                 return NULL;
             }
         } else if (page->reference_bit == 0) {
-            // write_page_to_disk(page);
+            write_to_pagefile(page);
 
             // unmap the page, delete its frame cap and slot
             seL4_Error err = dealloc_unmap_frame(&cspace, page);
@@ -169,6 +192,10 @@ frame_t *evict_page() {
                 ZF_LOGE("Unable to deallocate and unmap the page, seL4_Error = %d\n", err);
                 return NULL;
             }
+
+            // zero out the frame
+            unsigned char *data = frame_data(page->frame_ref);
+            memset(data, 0, PAGE_SIZE_4K);
 
             return frame_from_ref(page->frame_ref);
         }
@@ -190,25 +217,8 @@ seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vad
 void init_page_swap() {
     nfs = get_nfs_context();
     sglib_offset_queue_t_add(&free_pagefile_offsets, 0);
-
-    // allocate a ntfn to wait till pagefile finished opening
-    seL4_CPtr ntfn;
-    ut_t *ut = alloc_retype(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
-    ZF_LOGF_IF(!ut, "No memory for notification object");
-
-    nfs_open_pagefile_cb_args_t cb_args = {.ntfn = ntfn};
-    int ret = nfs_open_async(nfs, "pagefile", O_RDWR | O_CREAT, nfs_open_pagefile_cb, &cb_args); 
+    int ret = nfs_open_async(nfs, "pagefile", O_RDWR | O_CREAT, nfs_open_pagefile_cb, NULL); 
     ZF_LOGF_IF(ret != 0, "queuing open pagefile failed: %s", nfs_get_error(nfs));
-
-    seL4_Wait(ntfn, NULL);
-
-    // free up allocations for ntfn
-    seL4_Error del_error = cspace_delete(&cspace, ntfn);
-    if (del_error != seL4_NoError) {
-        ZF_LOGF("Failed to delete ntfn cap, seL4_Error = %d", del_error);
-    }
-    cspace_free_slot(&cspace, ntfn);
-    ut_free(ut);
 }
 
 void nfs_open_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data,
@@ -217,8 +227,8 @@ void nfs_open_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data
         ZF_LOGF("open pagefile failed with \"%s\"\n", (char *)data);
     }
 
-    seL4_Signal(((nfs_open_pagefile_cb_args_t*)private_data)->ntfn);
     pagefile_fh = (struct nfsfh*)data;
+    has_init_page_swap = true;
 }
 
 void nfs_pwrite_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data, 

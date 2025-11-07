@@ -70,6 +70,7 @@ add_executable(
     src/vm_region.c
     src/vfs.c
     src/page_swap.c
+    src/cap_utils.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(
