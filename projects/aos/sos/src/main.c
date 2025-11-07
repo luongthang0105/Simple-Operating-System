@@ -113,7 +113,7 @@ struct syscall_loop_args {
 };
 
 struct sos_open_callback_private_data {
-    seL4_CPtr ntfn;
+    int thread_index;
     int fd;
     int err;
 };
@@ -210,20 +210,20 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
     struct sos_open_callback_private_data *ret_private_data =  (struct sos_open_callback_private_data *)private_data;
 
-    seL4_CPtr ntfn    = ret_private_data->ntfn;
+    int thread_index    = ret_private_data->thread_index;
     int fd              = ret_private_data->fd;
 
     if (err < 0) {
         ZF_LOGE("error: %d, error msg: %s\n", err, (char*)data);
         ret_private_data->err = err;
-        seL4_Signal(ntfn);
+        seL4_Signal(worker_threads[thread_index]->ntfn);
         return;
     }
     
     struct nfsfh *nfsfh = (struct nfsfh *)data;
     user_process.vfs->fd_table[fd].fh = nfsfh;
 
-    seL4_Signal(ntfn);
+    seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 
 void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
@@ -384,11 +384,7 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;        
     }
 
-    /* Create a notification object */
-    seL4_CPtr ntfn;
-    ut_t *ut = create_cap(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
-
-    private_data->ntfn          = ntfn;
+    private_data->thread_index  = thread_index;
     private_data->fd            = fd;
     private_data->err           = 0;
 
@@ -402,11 +398,10 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;
     }
 
-    seL4_Wait(ntfn, NULL);
+    seL4_Wait(worker_threads[thread_index], NULL);
 
     err = private_data->err;
     free(private_data);
-    free_cap(ut, ntfn);
 
     if (err) {
         free(temp_path_buf);
