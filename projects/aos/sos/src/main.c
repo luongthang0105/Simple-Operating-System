@@ -52,6 +52,7 @@
 #include <nfsc/libnfs.h>
 #include "fcntl.h"
 #include "page_swap.h"
+#include "cap_utils.h"
 // #include "syscall_handlers/syscall_handlers.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
@@ -112,7 +113,7 @@ struct syscall_loop_args {
 };
 
 struct sos_open_callback_private_data {
-    int thread_index;
+    seL4_CPtr ntfn;
     int fd;
     int err;
 };
@@ -209,20 +210,20 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
     struct sos_open_callback_private_data *ret_private_data =  (struct sos_open_callback_private_data *)private_data;
 
-    int thread_index    = ret_private_data->thread_index;
+    seL4_CPtr ntfn    = ret_private_data->ntfn;
     int fd              = ret_private_data->fd;
 
     if (err < 0) {
         ZF_LOGE("error: %d, error msg: %s\n", err, (char*)data);
         ret_private_data->err = err;
-        seL4_Signal(worker_threads[thread_index]->ntfn);
+        seL4_Signal(ntfn);
         return;
     }
     
     struct nfsfh *nfsfh = (struct nfsfh *)data;
     user_process.vfs->fd_table[fd].fh = nfsfh;
 
-    seL4_Signal(worker_threads[thread_index]->ntfn);
+    seL4_Signal(ntfn);
 }
 
 void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
@@ -383,7 +384,11 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;        
     }
 
-    private_data->thread_index  = thread_index;
+    /* Create a notification object */
+    seL4_CPtr ntfn;
+    ut_t *ut = create_cap(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
+
+    private_data->ntfn          = ntfn;
     private_data->fd            = fd;
     private_data->err           = 0;
 
@@ -397,9 +402,11 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;
     }
 
-    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    seL4_Wait(ntfn, NULL);
+
     err = private_data->err;
     free(private_data);
+    free_cap(ut, ntfn);
 
     if (err) {
         free(temp_path_buf);
@@ -1341,11 +1348,8 @@ void init_muslc(void)
 void nfs_call_loop(seL4_CPtr ep, bool *condition_on_wait) {
     /* Create reply object */
     seL4_CPtr reply;
-    ut_t *reply_ut = alloc_retype(&reply, seL4_ReplyObject, seL4_ReplyBits);
-    if (reply_ut == NULL) {
-        ZF_LOGF("Failed to alloc reply object ut");
-    }
-
+    ut_t *reply_ut = create_cap(&reply, seL4_ReplyObject, seL4_ReplyBits);
+                          
     UNUSED bool have_reply = false;
     while (!(*condition_on_wait)) { // waits for nfs_mount
         seL4_Word badge = 0;
@@ -1358,12 +1362,7 @@ void nfs_call_loop(seL4_CPtr ep, bool *condition_on_wait) {
     }
 
     // free reply object
-    seL4_Error del_error = cspace_delete(&cspace, reply);
-    if (del_error != seL4_NoError) {
-        ZF_LOGF("Failed to delete ntfn cap, seL4_Error = %d", del_error);
-    }
-    cspace_free_slot(&cspace, reply);
-    ut_free(reply_ut);
+    free_cap(reply_ut, reply);
 }
 
 NORETURN void *main_continued(UNUSED void *arg)
@@ -1442,10 +1441,8 @@ NORETURN void *main_continued(UNUSED void *arg)
     /*  Create a thread pool */
     for (size_t i = 0; i < MAX_WORKER_THREADS; ++i) {
         /* Create a notification object */
-        ut_t *ut;
         seL4_CPtr thread_ntfn;
-        ut = alloc_retype(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
-        ZF_LOGF_IF(!ut, "No memory for notification object");
+        ut_t *ut = create_cap(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
         
         /* Start the worker thread */
         struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));

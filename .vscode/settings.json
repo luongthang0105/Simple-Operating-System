@@ -38,6 +38,8 @@
         "user_process.h": "c",
         "page_swap.h": "c",
         "util.h": "c",
-        "vm_region.h": "c"
+        "vm_region.h": "c",
+        "cap_utils.h": "c",
+        "libnfs.h": "c"
     }
 }
