@@ -11,6 +11,7 @@
 #include <syscalls.h>
 /* Your OS header file */
 #include <sos.h>
+#include "file_system.h"
 
 #define BUF_SIZE    6144
 #define MAX_ARGS   32
