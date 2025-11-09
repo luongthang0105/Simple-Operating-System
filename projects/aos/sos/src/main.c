@@ -1415,8 +1415,8 @@ NORETURN void *main_continued(UNUSED void *arg)
 
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
-    seL4_Error err = debugger_init(&cspace, seL4_CapIRQControl, gdb_recv_ep);
-    ZF_LOGF_IF(err, "Failed to initialize debugger %d", err);
+    seL4_Error debug_err = debugger_init(&cspace, seL4_CapIRQControl, gdb_recv_ep);
+    ZF_LOGF_IF(debug_err, "Failed to initialize debugger %d", debug_err);
     char secret_string[15] = "Welcome to AOS!";
 #endif /* CONFIG_SOS_GDB_ENABLED */
 
@@ -1442,6 +1442,8 @@ NORETURN void *main_continued(UNUSED void *arg)
         
         /* Start the worker thread */
         struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+        ZF_LOGF_IF(!worker_sys_loop_args, "Failed to allocate memory to worker_sys_loop_args");
+
         sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, i + 1, false, seL4_MinPrio, thread_ntfn, true);
         
         // worker thread IPC EP is created within 
@@ -1452,17 +1454,24 @@ NORETURN void *main_continued(UNUSED void *arg)
         worker_threads[i] = thread;
     }
 
+    /* Worker thread for handling interrupts */
+    struct syscall_loop_args *interrupts_handler_args = malloc(sizeof(struct syscall_loop_args));
+    ZF_LOGF_IF(!interrupts_handler_args, "Failed to allocate memory to interrupts_handler_args");
+
+    interrupts_handler_args->ep = ipc_ep;
+
+    // unbinds ntfn from init thread TCB, because we're going to bind ntfn to the interrupts handler thread
+    seL4_Error err = seL4_TCB_UnbindNotification(seL4_CapInitThreadTCB);
+    ZF_LOGF_IF(err != seL4_NoError, "Failed to unbind notification from init thread TCB, seL4_Error=%d", err);
+
+    thread_create(syscall_loop, interrupts_handler_args, MAX_WORKER_THREADS + 1, true, seL4_MinPrio, ntfn, true);
 
     /* Start user process */
     printf("Start first process\n");
     bool success = start_first_process(APP_NAME, worker_threads[0]->ipc_ep);
     ZF_LOGF_IF(!success, "Failed to start first process");
     
-
-    /* Main thread needs to enter syscall loop as well, for handling interrupts */
-    struct syscall_loop_args *main_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
-    main_sys_loop_args->ep = ipc_ep;
-    syscall_loop(main_sys_loop_args);
+    seL4_Wait(seL4_CapNull, NULL);
 }
 /*
  * Main entry point - called by crt.
