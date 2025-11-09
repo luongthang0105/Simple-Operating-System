@@ -104,6 +104,10 @@ int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn) {
     return 0;
 }
 
+void in_memory_pages_add(page_metadata_t *page) {
+    sglib_pages_queue_t_add(&in_memory_pages, page);
+}
+
 static void write_to_pagefile(page_metadata_t *page_metadata) {
     unsigned char* frame_content = frame_data(page_metadata->frame_ref);
     // offset to the available space in pagefile

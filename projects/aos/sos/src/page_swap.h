@@ -18,5 +18,7 @@ frame_t *evict_page();
  */
 int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn);
 
+void in_memory_pages_add(page_metadata_t *page);
+
 void init_page_swap();
 seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights);
