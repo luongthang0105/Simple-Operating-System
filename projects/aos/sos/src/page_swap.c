@@ -60,6 +60,14 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
  */
 static void write_to_pagefile(page_metadata_t *page_metadata);
 
+/**
+ * Return and pop the first element in the `free_pagefile_offsets` queue.
+ * Also adds the new eof offset (= current eof_offset + `PAGE_SIZE_4K`) to the queue if the current eof offset is popped.
+ * 
+ * @return First element of the `free_pagefile_offsets` queue, implying an available offset in the pagefile.
+ */
+static size_t free_pagefile_offsets_pop();
+
 typedef struct pages_queue
 {
     page_metadata_t *arr[PAGES_QUEUE_MAX_SIZE];
@@ -75,6 +83,7 @@ typedef struct free_pagefile_offsets {
     size_t arr[OFFSET_QUEUE_MAX_SIZE];
     size_t i;
     size_t j;
+    size_t eof_offset;
 } offset_queue_t;
 
 pages_queue_t in_memory_pages;
@@ -105,14 +114,22 @@ void in_memory_pages_add(page_metadata_t *page) {
     sglib_pages_queue_t_add(&in_memory_pages, page);
 }
 
-static void write_to_pagefile(page_metadata_t *page_metadata) {
-    unsigned char* frame_content = frame_data(page_metadata->frame_ref);
-    // offset to the available space in pagefile
+static size_t free_pagefile_offsets_pop() {
     size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
     sglib_offset_queue_t_delete_first(&free_pagefile_offsets);
 
-    // add the next available offset
-    sglib_offset_queue_t_add(&free_pagefile_offsets, available_offset + PAGE_SIZE_4K);
+    if (available_offset == free_pagefile_offsets.eof_offset) {/* eof offset is popped, need to update eof offset*/
+        free_pagefile_offsets.eof_offset += PAGE_SIZE_4K;
+        sglib_offset_queue_t_add(&free_pagefile_offsets, free_pagefile_offsets.eof_offset);
+    }
+
+    return available_offset;
+}
+
+static void write_to_pagefile(page_metadata_t *page_metadata) {
+    unsigned char* frame_content = frame_data(page_metadata->frame_ref);
+    // offset to the available space in pagefile
+    size_t available_offset = free_pagefile_offsets_pop();
 
     // write content to pagefile at offset, must ensure all bytes are written
     size_t total_bytes_written = 0;
@@ -211,7 +228,10 @@ seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vad
 
 void init_page_swap() {
     nfs = get_nfs_context();
+
     sglib_offset_queue_t_add(&free_pagefile_offsets, 0);
+    free_pagefile_offsets.eof_offset = 0;
+
     int ret = nfs_open_async(nfs, "pagefile", O_RDWR | O_CREAT, nfs_open_pagefile_cb, NULL); 
     ZF_LOGF_IF(ret != 0, "queuing open pagefile failed: %s", nfs_get_error(nfs));
 }
