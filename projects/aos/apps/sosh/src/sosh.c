@@ -296,6 +296,10 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
 
 int main(void)
 {   
+    printf("running benchmark debugger mode");
+    sos_benchmark(1);
+    printf("finished running benchmark debugger mode");
+
     printf("\n[SOS Starting]\n");
 
     char buf[BUF_SIZ] = "hello";

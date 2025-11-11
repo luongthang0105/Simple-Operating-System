@@ -74,7 +74,7 @@
 #define IRQ_EP_BADGE         BIT(seL4_BadgeBits - 1ul)
 #define IRQ_IDENT_BADGE_BITS MASK(seL4_BadgeBits - 1ul)
 
-#define APP_NAME             "tests"
+#define APP_NAME             "sosh"
 #define APP_PRIORITY         (0)
 #define APP_EP_BADGE         (101)
 
@@ -515,7 +515,7 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     size_t nbytes           = seL4_GetMR(2);
     size_t file_desc        = seL4_GetMR(3);
     
-    if (nbytes >= BREAKDOWN_THRESHOLD) {
+    if (nbytes > BREAKDOWN_THRESHOLD) {
         ZF_LOGE("nbytes to write is too large!");
         seL4_SetMR(0, -1);
         return;
@@ -614,7 +614,7 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
     size_t nbytes           = seL4_GetMR(2);
     int file_desc           = seL4_GetMR(3);
 
-    if (nbytes >= BREAKDOWN_THRESHOLD) {
+    if (nbytes > BREAKDOWN_THRESHOLD) {
         ZF_LOGE("nbytes to read is too large!");
         seL4_SetMR(0, -1);
         return;
