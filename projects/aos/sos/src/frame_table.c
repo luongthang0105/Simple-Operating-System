@@ -132,6 +132,8 @@ frame_ref_t alloc_frame(void)
         assert(frame != NULL_FRAME);
         push_back(&frame_table.allocated, frame);
     }
+    unsigned char *data = frame_data(ref_from_frame(frame));
+    memset(data, 0, PAGE_SIZE_4K);
     return ref_from_frame(frame);
 }
 
