@@ -74,7 +74,7 @@
 #define IRQ_EP_BADGE         BIT(seL4_BadgeBits - 1ul)
 #define IRQ_IDENT_BADGE_BITS MASK(seL4_BadgeBits - 1ul)
 
-#define APP_NAME             "sosh"
+#define APP_NAME             "tests"
 #define APP_PRIORITY         (0)
 #define APP_EP_BADGE         (101)
 
@@ -105,7 +105,7 @@ static seL4_CPtr sched_ctrl_start;
 static seL4_CPtr sched_ctrl_end;
 
 /* the one process we start */
-static user_process_t user_process;
+extern user_process_t user_process;
 
 struct syscall_loop_args {
     seL4_CPtr ep;
@@ -176,6 +176,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
             ZF_LOGI("vaddr %p is not mapped to any frame, trying to allocate frame...", (void*)to_vaddr);
             vm_region_t *valid_region = find_valid_region(to_vaddr, BIT(6), user_process.vm_regions);
 
+            printf("valid region: %p\n", valid_region->vaddr_base);
             if (valid_region == NULL) {
                 ZF_LOGE("vaddr %p resolves to an invalid region access", (void*)to_vaddr);
                 return 0;
@@ -198,8 +199,8 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
         size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
         size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
         
-        char *temp = (char*) from;
-        memcpy(&source_data[offset], &temp[bytes_copied], bytes_to_copy);
+        // char *temp = (char*) from;
+        memcpy(source_data + offset, from + bytes_copied, bytes_to_copy);
 
         rem_bytes -= bytes_to_copy;
         to_vaddr += bytes_to_copy;
@@ -492,15 +493,15 @@ typedef struct {
 } nfs_write_cb_args_t;
 
 void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
-    if (status < 0) {
-        ZF_LOGE("nfs_write failed with error: %s\n", (char*)data);
-        return;
-    }
-
     nfs_write_cb_args_t *args = private_data;
     size_t thread_index = args->thread_index;
     args->bytes_written = status;
 
+    if (status < 0) {
+        ZF_LOGE("nfs_write failed with error: %s\n", (char*)data);
+        seL4_Signal(worker_threads[thread_index]->ntfn);
+        return;
+    }
     seL4_Signal(worker_threads[thread_index]->ntfn);
     return;
 }
@@ -513,7 +514,7 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     
     uintptr_t buf_vaddr     = seL4_GetMR(1);
     size_t nbytes           = seL4_GetMR(2);
-    size_t file_desc        = seL4_GetMR(3);
+    int file_desc           = seL4_GetMR(3);
     
     if (nbytes > BREAKDOWN_THRESHOLD) {
         ZF_LOGE("nbytes to write is too large!");
@@ -559,7 +560,7 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
         struct nfs_context *nfs_context = get_nfs_context();
 
         nfs_write_cb_args_t args = {.thread_index = thread_index};
-        int ret = nfs_write_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes, temp_buf,
+        int ret = nfs_write_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes, (const void *)temp_buf,
                         nfs_write_cb, (void*)&args);
         if (ret < 0) {
             ZF_LOGE("Failed to queue nfs_write_async");
@@ -586,19 +587,20 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
 typedef struct {
     size_t thread_index;
     size_t bytes_read;
-    void *user_buf_vaddr;
+    unsigned char *data;
 } nfs_read_cb_args_t;
 
 void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
+    nfs_read_cb_args_t *args = private_data;
+    args->bytes_read = status;
+
     if (status < 0) {
         ZF_LOGE("nfs_read failed with error: %s\n", (char*)data);
+        seL4_Signal(worker_threads[args->thread_index]->ntfn);
         return;
     }
 
-    nfs_read_cb_args_t *args = private_data;
-
-    args->bytes_read = copy_to_user(args->user_buf_vaddr, data, status);
-
+    memcpy(args->data, data, status);
     seL4_Signal(worker_threads[args->thread_index]->ntfn);
     return;
 }
@@ -646,8 +648,8 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
             return;
         }
         struct nfs_context *nfs_context = get_nfs_context();
-
-        nfs_read_cb_args_t args = {.thread_index = thread_index, .user_buf_vaddr = buf_vaddr};
+        unsigned char *data = malloc(nbytes);
+        nfs_read_cb_args_t args = {.thread_index = thread_index, .data = data};
         int ret = nfs_read_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes,
                         nfs_read_cb, (void*)&args);
         if (ret < 0) {
@@ -656,9 +658,12 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
             return;
         }
         seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+        
+        copy_to_user(buf_vaddr, args.data, args.bytes_read);
 
-        size_t bytes_read = args.bytes_read;
-        seL4_SetMR(0, bytes_read);
+        free(data);
+
+        seL4_SetMR(0, args.bytes_read);
         return;
     } else {
         char* temp_buf = malloc(nbytes);
@@ -893,7 +898,6 @@ void write_to_buf(UNUSED struct network_console *network_console, char c) {
     }
 }
 int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
-    // get the vaddr and action of this fault
     uintptr_t original_faultadrr = seL4_Fault_VMFault_get_Addr(fault);
     seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
 
@@ -904,18 +908,13 @@ int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
         return -1;
     }
     
-    uintptr_t faultaddr = ROUND_DOWN(seL4_Fault_VMFault_get_Addr(fault), PAGE_SIZE_4K);
+    uintptr_t faultaddr = PAGE_ALIGN_4K(original_faultadrr);
     // find the associated page of this faultaddr
-    page_metadata_t *page = find_page(faultaddr, user_process.page_global_directory);
-    if (page != NULL) { /* page is either on disk or in memory */
-        if (page->pagefile_offset != -1) {   /* page is on disk */
-            return swap_to_mem(page, worker_thread_ntfn);
-        } else {                             /* page is still in memory */
-            return reference_page(page, user_process.vspace, faultaddr, valid_region->rights);
-        }
-    } else { /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
+    page_metadata_t *page = find_page(original_faultadrr, user_process.page_global_directory);
+    if (page == NULL) {  /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
         return alloc_map_frame(&cspace, faultaddr, &user_process, valid_region->rights);
     }
+    return 0;
 }
 
 seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_CPtr worker_thread_ntfn) {

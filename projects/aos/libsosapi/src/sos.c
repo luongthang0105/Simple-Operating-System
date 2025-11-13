@@ -40,7 +40,7 @@ int sos_open(const char *path, fmode_t mode)
     seL4_SetMR(3, mode);
 
     seL4_Call(SOS_IPC_EP_CAP, tag);
-   return seL4_GetMR(0);
+    return seL4_GetMR(0);
 }
 
 int sos_close(int file)
@@ -59,14 +59,15 @@ int sos_read(int file, char *buf, size_t nbyte)
 {   
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
     size_t total_bytes_read = 0;
+
     while (nbyte >= BREAKDOWN_THRESHOLD) {
         seL4_SetMR(0, SYSCALL_SOS_READ); 
-        seL4_SetMR(1, &buf[total_bytes_read]);
+        seL4_SetMR(1, buf + total_bytes_read);
         seL4_SetMR(2, BREAKDOWN_THRESHOLD);
         seL4_SetMR(3, file);
-        seL4_Call(SOS_IPC_EP_CAP, tag);    
+        seL4_Call(SOS_IPC_EP_CAP, tag);
 
-        if ((int)seL4_GetMR(0) == -1) {
+        if ((int)seL4_GetMR(0) < 0) {
             return -1;
         }
         total_bytes_read += seL4_GetMR(0);
@@ -74,12 +75,12 @@ int sos_read(int file, char *buf, size_t nbyte)
     }
 
     seL4_SetMR(0, SYSCALL_SOS_READ); 
-    seL4_SetMR(1, &buf[total_bytes_read]);
+    seL4_SetMR(1, buf + total_bytes_read);
     seL4_SetMR(2, nbyte);
     seL4_SetMR(3, file);
     seL4_Call(SOS_IPC_EP_CAP, tag);
 
-    if ((int)seL4_GetMR(0) == -1) {
+    if ((int)seL4_GetMR(0) < 0) {
         return -1;
     }
 
@@ -101,12 +102,12 @@ int sos_write(int file, const char *buf, size_t nbyte)
     size_t total_bytes_written = 0;
     while (nbyte >= BREAKDOWN_THRESHOLD) {
         seL4_SetMR(0, SYSCALL_SOS_WRITE); 
-        seL4_SetMR(1, &buf[total_bytes_written]);
+        seL4_SetMR(1, buf + total_bytes_written);
         seL4_SetMR(2, BREAKDOWN_THRESHOLD);
         seL4_SetMR(3, file);
         seL4_Call(SOS_IPC_EP_CAP, tag);    
 
-        if ((int)seL4_GetMR(0) == -1) {
+        if ((int)seL4_GetMR(0) < 0) {
             return -1;
         }
         total_bytes_written += seL4_GetMR(0);
@@ -114,12 +115,12 @@ int sos_write(int file, const char *buf, size_t nbyte)
     }
 
     seL4_SetMR(0, SYSCALL_SOS_WRITE); 
-    seL4_SetMR(1, &buf[total_bytes_written]);
+    seL4_SetMR(1, buf + total_bytes_written);
     seL4_SetMR(2, nbyte);
     seL4_SetMR(3, file);
     seL4_Call(SOS_IPC_EP_CAP, tag);
 
-    if ((int)seL4_GetMR(0) == -1) {
+    if ((int)seL4_GetMR(0) < 0) {
         return -1;
     }
     total_bytes_written += seL4_GetMR(0);

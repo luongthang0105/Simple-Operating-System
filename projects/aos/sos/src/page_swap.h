@@ -15,7 +15,7 @@ void evict_page();
  *  @param page   page that is about to be swapped from disk to memory 
  *  @return 0 on success.
  */
-int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn);
+int swap_to_mem(page_metadata_t *page);
 
 void in_memory_pages_add(page_metadata_t *page);
 

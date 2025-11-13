@@ -11,7 +11,7 @@
 #define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 10))
 #else
 #define PAGES_QUEUE_MAX_SIZE (1 << 19)
-const size_t OFFSET_QUEUE_MAX_SIZE = (1 << 19);
+#define OFFSET_QUEUE_MAX_SIZE = (1 << 19);
 #endif
 
 extern cspace_t cspace;
@@ -92,8 +92,7 @@ offset_queue_t free_pagefile_offsets;
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
 SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
 
-int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn) {
-    printf("swap to mem\n");
+int swap_to_mem(page_metadata_t *page) {
     evict_page();
     
     frame_ref_t frame_ref = alloc_frame();
@@ -125,7 +124,6 @@ int swap_to_mem(page_metadata_t *page, seL4_CPtr ntfn) {
     page->frame_cap = frame_cptr;
     page->reference_bit = 1;
     page->pagefile_offset = -1;
-    printf("update page status\n");
     
     in_memory_pages_add(page);
     return 0;
@@ -136,15 +134,20 @@ void in_memory_pages_add(page_metadata_t *page) {
 }
 
 static size_t free_pagefile_offsets_pop() {
-    size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
-    sglib_offset_queue_t_delete_first(&free_pagefile_offsets);
+    
+    if (!sglib_offset_queue_t_is_empty(&free_pagefile_offsets)) {
+        size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
+        sglib_offset_queue_t_delete_first(&free_pagefile_offsets);
 
-    if (available_offset == free_pagefile_offsets.eof_offset) {/* eof offset is popped, need to update eof offset*/
-        free_pagefile_offsets.eof_offset += PAGE_SIZE_4K;
-        sglib_offset_queue_t_add(&free_pagefile_offsets, free_pagefile_offsets.eof_offset);
+        if (available_offset == free_pagefile_offsets.eof_offset) {/* eof offset is popped, need to update eof offset*/
+            free_pagefile_offsets.eof_offset += PAGE_SIZE_4K;
+            sglib_offset_queue_t_add(&free_pagefile_offsets, free_pagefile_offsets.eof_offset);
+        }
+
+        return available_offset;
     }
-
-    return available_offset;
+    ZF_LOGE("Free pagefile offset queue is empty!");
+    return 0;
 }
 
 static void write_to_pagefile(page_metadata_t *page_metadata) {
@@ -165,11 +168,13 @@ static void write_to_pagefile(page_metadata_t *page_metadata) {
     
 
     while (total_bytes_written < PAGE_SIZE_4K) {
+        pwrite_cb_args.bytes_written = 0;
+        
         size_t bytes_to_write = PAGE_SIZE_4K - total_bytes_written;
         size_t offset = available_offset + total_bytes_written;
 
         int ret = nfs_pwrite_async( nfs, pagefile_fh, offset, bytes_to_write, 
-                                    (const void*)(frame_content + total_bytes_written), 
+                                    frame_content + total_bytes_written, 
                                     nfs_pwrite_pagefile_cb, &pwrite_cb_args);
         ZF_LOGF_IF(ret != 0, "queuing pwrite pagefile failed: %s", nfs_get_error(nfs));
         
@@ -208,7 +213,6 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
         seL4_Wait(ntfn, NULL);
         
         total_bytes_read += pread_cb_args.bytes_read;
-        printf("total bytes read: %d\n", total_bytes_read);
     }
 
     // free the notification object
@@ -221,14 +225,14 @@ void evict_page() {
         sglib_pages_queue_t_delete_first(&in_memory_pages);
 
         if (page->reference_bit == 1) { /* give it a second chance */
-            in_memory_pages_add(page);
             page->reference_bit = 0;
+            in_memory_pages_add(page);
 
             // unmap the page so that we can simulate the reference bit via vm fault
             seL4_Error err = seL4_ARM_Page_Unmap(page->frame_cap);
             ZF_LOGF_IF(err != seL4_NoError, "Unable to unmap the page, seL4_Error = %d\n", err);
+
         } else if (page->reference_bit == 0) {
-            // printf("frame ref: %lu\n", page->frame_ref);
             write_to_pagefile(page);
 
             // destruct page_metadata
@@ -241,7 +245,7 @@ void evict_page() {
 
 seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights) {
     page->reference_bit = 1;
-    seL4_Error err = seL4_ARM_Page_Map(page->frame_cap, vspace, vaddr, rights, seL4_ARM_Default_VMAttributes);
+    seL4_Error err = seL4_ARM_Page_Map(page->frame_cap, vspace, PAGE_ALIGN_4K(vaddr), rights, seL4_ARM_Default_VMAttributes);
     if (err != seL4_NoError) {
         ZF_LOGE("Unable to perform page map. seL4_Error = %d", err);
         return CSPACE_ERROR;
@@ -263,6 +267,7 @@ void nfs_open_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *data
                  UNUSED void *private_data) {
     if (status < 0) {
         ZF_LOGF("open pagefile failed with \"%s\"\n", (char *)data);
+        return;
     }
 
     pagefile_fh = (struct nfsfh*)data;
@@ -300,7 +305,7 @@ void nfs_pread_pagefile_cb(int status, UNUSED struct nfs_context *nfs, void *dat
     args->bytes_read = status;
 
     if (status > 0) {
-        memcpy(args->buf, data, status);
+        memcpy((void *)args->buf, (const void*)data, status);
     }
 
     seL4_Signal(args->ntfn);
