@@ -616,12 +616,6 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
     size_t nbytes           = seL4_GetMR(2);
     int file_desc           = seL4_GetMR(3);
 
-    if (nbytes > BREAKDOWN_THRESHOLD) {
-        ZF_LOGE("nbytes to read is too large!");
-        seL4_SetMR(0, -1);
-        return;
-    }
-
     if (file_desc < 0 || file_desc >= PROCESS_MAX_FILES) {
         ZF_LOGE("File descriptor is invalid.");
         seL4_SetMR(0, -1);
@@ -641,58 +635,78 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;
     }
 
-    if (file_desc != CONSOLE_FD) { /* normal files */
-        if (user_process.vfs->fd_table[file_desc].fh == NULL) {
-            ZF_LOGE("NFS file handle for fd=%d does not exist", file_desc);
-            seL4_SetMR(0, -1);
-            return;
-        }
-        struct nfs_context *nfs_context = get_nfs_context();
-        unsigned char *data = malloc(nbytes);
-        nfs_read_cb_args_t args = {.thread_index = thread_index, .data = data};
-        int ret = nfs_read_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes,
-                        nfs_read_cb, (void*)&args);
-        if (ret < 0) {
-            ZF_LOGE("Failed to queue nfs_read_async");
-            seL4_SetMR(0, -1);
-            return;
-        }
-        seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
-        
-        copy_to_user(buf_vaddr, args.data, args.bytes_read);
+    size_t total_bytes_read = 0;
+    while (nbytes > 0) {
+        size_t bytes_to_read = MIN(BREAKDOWN_THRESHOLD, nbytes);
+        size_t bytes_read = 0;
+        bool early_return = false;
+        bool failed = false;
+        unsigned char *data = malloc(bytes_to_read);
 
+        if (file_desc != CONSOLE_FD) { /* normal files */
+            if (user_process.vfs->fd_table[file_desc].fh == NULL) {
+                ZF_LOGE("NFS file handle for fd=%d does not exist", file_desc);
+                seL4_SetMR(0, -1);
+                return;
+            }
+            struct nfs_context *nfs_context = get_nfs_context();
+
+            nfs_read_cb_args_t args = {.thread_index = thread_index, .data = data};
+            int ret = nfs_read_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, bytes_to_read,
+                            nfs_read_cb, (void*)&args);
+            if (ret < 0) {
+                ZF_LOGE("Failed to queue nfs_read_async");
+                seL4_SetMR(0, -1);
+                return;
+            }
+            seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+            bytes_read = args.bytes_read;
+            
+            if (bytes_read == 0) { // assuming this is EOF
+                early_return = true;
+            } else if (bytes_read == -1) {
+                failed = true;
+            }
+        } else {
+            size_t remaining_bytes = bytes_to_read;
+            while (remaining_bytes > 0) {
+                if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
+                    nwcs_reader = thread_index;
+                    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+                }
+
+                data[bytes_read] = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
+                SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
+                if (data[bytes_read] == '\n') {
+                    bytes_read++;
+                    early_return = true;
+                    break;
+                }
+
+                remaining_bytes--;
+                bytes_read++;
+            }
+            nwcs_reader = -1;
+        }
+
+        size_t bytes_copied = copy_to_user((void*)(buf_vaddr + total_bytes_read), (void*)data, bytes_read);
+        total_bytes_read += bytes_copied;
+        nbytes -= bytes_copied;
         free(data);
 
-        seL4_SetMR(0, args.bytes_read);
-        return;
-    } else {
-        char* temp_buf = malloc(nbytes);
-        size_t remaining_bytes = nbytes;
-        size_t bytes_read = 0;
-        while (remaining_bytes > 0) {
-            if (SGLIB_QUEUE_IS_EMPTY(char, nwcs_buf, i, j)) {
-                nwcs_reader = thread_index;
-                seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
-            }
-
-            temp_buf[bytes_read] = SGLIB_QUEUE_FIRST_ELEMENT(char, nwcs_buf, i, j);
-            SGLIB_QUEUE_DELETE_FIRST(char, nwcs_buf, i, j, DIM);
-            if (temp_buf[bytes_read] == '\n') {
-                bytes_read++;
-                break;
-            }
-
-            remaining_bytes--;
-            bytes_read++;
+        if (early_return) {
+            seL4_SetMR(0, total_bytes_read);
+            return;        
         }
-        nwcs_reader = -1;
-        seL4_SetMR(0, bytes_read);
 
-        copy_to_user((void *)buf_vaddr, (void *)temp_buf, nbytes);
-
-        free(temp_buf);
-        return;
+        if (failed) {
+            seL4_SetMR(0, -1);
+            return;
+        }
     }
+
+    seL4_SetMR(0, total_bytes_read);
+    return;
 }
 
 void handler_sos_timestamp(seL4_MessageInfo_t *reply_msg) {
