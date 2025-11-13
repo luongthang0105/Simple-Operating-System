@@ -505,7 +505,7 @@ void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private
     seL4_Signal(worker_threads[thread_index]->ntfn);
     return;
 }
-#define BREAKDOWN_THRESHOLD 70000
+#define BREAKDOWN_THRESHOLD 4096
 
 void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     ZF_LOGV("syscall: write!\n");

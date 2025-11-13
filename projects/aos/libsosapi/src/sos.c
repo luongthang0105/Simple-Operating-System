@@ -54,7 +54,7 @@ int sos_close(int file)
     return seL4_GetMR(0);
 }
 
-#define BREAKDOWN_THRESHOLD 70000
+#define BREAKDOWN_THRESHOLD 4096
 int sos_read(int file, char *buf, size_t nbyte)
 {   
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
