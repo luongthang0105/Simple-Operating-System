@@ -296,10 +296,9 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
 
 int main(void)
 {   
-    printf("running benchmark debugger mode");
-    sos_benchmark(1);
-    printf("finished running benchmark debugger mode");
-
+    in = open("console", O_RDWR);
+    assert(in >= 0);
+    
     printf("\n[SOS Starting]\n");
 
     char buf[BUF_SIZ] = "hello";
@@ -307,8 +306,7 @@ int main(void)
     int i, r, done, found, new, argc;
     char *bp, *p;
     
-    in = open("console", O_RDONLY);
-    assert(in >= 0);
+    
 
     bp = buf;
     done = 0;

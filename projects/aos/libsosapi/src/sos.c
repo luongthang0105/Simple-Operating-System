@@ -95,7 +95,7 @@ int sos_write(int file, const char *buf, size_t nbyte)
     // should ask on the forum whats the intended behaviour for stdout/stderr
     
     if (file == 1 || file == 2) { /* stdout/stderr, let it writes to network console */
-        return sos_print(buf, nbyte);
+        file = CONSOLE_FD;
     }
 
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
