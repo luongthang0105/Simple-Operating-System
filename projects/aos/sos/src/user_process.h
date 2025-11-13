@@ -38,3 +38,4 @@ struct user_process {
     vfs_t* vfs;
 };
 typedef struct user_process user_process_t;
+user_process_t user_process;

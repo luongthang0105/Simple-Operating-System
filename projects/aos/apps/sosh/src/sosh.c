@@ -23,134 +23,6 @@
 #include <syscalls.h>
 /* Your OS header file */
 #include <sos.h>
-
-// #include <utils/page.h>
-
-// #define NBLOCKS 9
-// #define NPAGES_PER_BLOCK 28
-// #define TEST_ADDRESS 0x8000000000
-
-// /* called from pt_test */
-// static void
-// do_pt_test(char **buf)
-// {
-//     int i;
-
-//     /* set */
-//     for (int b = 0; b < NBLOCKS; b++) {
-//         for (int p = 0; p < NPAGES_PER_BLOCK; p++) {
-//           buf[b][p * PAGE_SIZE_4K] = p;
-//         }
-//     }
-
-//     /* check */
-//     for (int b = 0; b < NBLOCKS; b++) {
-//         for (int p = 0; p < NPAGES_PER_BLOCK; p++) {
-//           assert(buf[b][p * PAGE_SIZE_4K] == p);
-//         }
-//     }
-// }
-
-// int main(void)
-// {
-//     /* need a decent sized stack */
-//     char buf1[NBLOCKS][NPAGES_PER_BLOCK * PAGE_SIZE_4K];
-//     char *buf1_ptrs[NBLOCKS];
-//     char *buf2[NBLOCKS];
-
-//     /* check the stack is above phys mem */
-//     for (int b = 0; b < NBLOCKS; b++) {
-//         buf1_ptrs[b] = buf1[b];
-//     }
-//     assert((void *) buf1 > (void *) TEST_ADDRESS);
-
-//     // /* stack test */
-//     do_pt_test(buf1_ptrs);
-
-//     // /* heap test */
-//     for (int b = 0; b < NBLOCKS; b++) {
-//         buf2[b] = malloc(NPAGES_PER_BLOCK * PAGE_SIZE_4K);
-//         assert(buf2[b]);
-//     }
-//     do_pt_test(buf2);
-//     for (int b = 0; b < NBLOCKS; b++) {
-//         free(buf2[b]);
-//     }
-//     printf("Actually got here\n");
-//     while(1);
-// }
-
-// #define SMALL_BUF_SZ 2
-// #define MEDIUM_BUF_SZ 256
-
-// char test_str[] = "Basic test string for read/write";
-// char small_buf[SMALL_BUF_SZ];
-
-// int test_buffers(int console_fd) {
-//     int result;
-//    /* test a small string from the code segment */
-//    result = sos_write(console_fd, test_str, strlen(test_str));
-//    assert(result == strlen(test_str));
-
-//     // /* test reading to a small buffer */
-//     // result = sos_read(console_fd, small_buf, SMALL_BUF_SZ);
-//     // /* make sure you type in at least SMALL_BUF_SZ */
-//     // assert(result == SMALL_BUF_SZ);
-
-//     // /* test reading into a large on-stack buffer */
-//     // char stack_buf[MEDIUM_BUF_SZ];
-//     // /* for this test you'll need to paste a lot of data into
-//     //     the console, without newlines */
-
-//     // result = sos_read(console_fd, &stack_buf, MEDIUM_BUF_SZ);
-//     // assert(result == MEDIUM_BUF_SZ);
-
-//     // result = sos_write(console_fd, &stack_buf, MEDIUM_BUF_SZ);
-//     // assert(result == MEDIUM_BUF_SZ);
-
-//     // /* try sleeping */
-//     // for (int i = 0; i < 5; i++) {
-//     //     time_t prev_seconds = time(NULL);
-//     //     sleep(1);
-//     //     time_t next_seconds = time(NULL);
-//     //     assert(next_seconds > prev_seconds);
-//     //     printf("Tick\n");
-//     // }
-// }
-
-// void test_2_pages_buffer(int console_fd) {
-//     int result;
-//     const int sz = 4100;
-//     // char twopgs_buf[sz + 1];
-//     // for (int i = 0; i < sz; ++i) {
-//     //     twopgs_buf[i] = '2';
-//     // }
-//     // twopgs_buf[sz] = '\0';
-//     // result = sos_write(console_fd, twopgs_buf, strlen(twopgs_buf));
-//     // assert(result == strlen(twopgs_buf));
-
-//     char stack_buf[sz];
-//     result = sos_read(console_fd, &stack_buf, sz);
-//     assert(result == sz);
-//     // printf("result read: %d\n", result);
-//     result = sos_write(console_fd, &stack_buf, sz);
-//     // printf("result write: %d\n", result);
-//     assert(result == sz);
-// }
-// int main(void) {
-//     // printf("SOSH Starting!!\n");
-//     sleep(2); // waits a bit until mounting is done
-//     int fd;
-//     fd = sos_open("raw.txt", O_RDWR);
-//     assert(fd == 4);
-//     // fd = sos_open("console", O_RDWR);
-//     // assert(fd == CONSOLE_FD);
-//     // test_buffers(fd);
-//     // test_2_pages_buffer(console_fd);
-//     while(1);
-// }
-
-
 #include "benchmark.h"
 
 #define BUF_SIZ    6144
@@ -424,7 +296,10 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
 
 int main(void)
 {   
-    sleep(2);
+    printf("running benchmark debugger mode");
+    sos_benchmark(1);
+    printf("finished running benchmark debugger mode");
+
     printf("\n[SOS Starting]\n");
 
     char buf[BUF_SIZ] = "hello";

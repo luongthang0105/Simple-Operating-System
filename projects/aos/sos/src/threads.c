@@ -250,7 +250,7 @@ sos_thread_t *thread_create(thread_main_f function, void *arg, seL4_Word badge, 
     new_thread->ntfn = bound_ntfn;
     
     /* Provide a name for the thread -- Helpful for debugging */
-    NAME_THREAD(new_thread->tcb, "second sos thread");
+    NAME_THREAD(new_thread->tcb, "worker thread");
 
     /* set up the stack */
     seL4_Word sp;

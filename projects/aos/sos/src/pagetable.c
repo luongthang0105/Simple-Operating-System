@@ -1,10 +1,14 @@
 #include "pagetable.h"
 #include "backtrace.h"
 #include "utils.h"
+#include "user_process.h"
+#include "page_swap.h"
 
 #define PAGE_TABLE_NAME "Page Table"
 #define PAGE_DIRECTORY_NAME "Page Directory"
 #define PAGE_UPPER_DIRECTORY_NAME "Page Upper Directory"
+
+extern user_process_t user_process;
 
 static size_t get_pgd_bits(uintptr_t vaddr) {
     return (vaddr >> 39) & 0x1FF;
@@ -258,8 +262,18 @@ page_metadata_t *find_page(uintptr_t vaddr, pgd_t *pgd) {
         ZF_LOGE("%s does not exist", PAGE_TABLE_NAME);
         return NULL;
     }
-
-    return pt->page_metadatas[pt_index];
+    int ret = 0;
+    page_metadata_t *page = pt->page_metadatas[pt_index];
+    if (page != NULL) { /* page is either on disk or in memory */
+        if (page->pagefile_offset != -1) {   /* page is on disk */
+            ret = swap_to_mem(page);
+        } else {                             /* page is still in memory */
+            // printf("page is still in memory with reference bit = %d!!\n", page->reference_bit);
+            ret = reference_page(page, user_process.vspace, vaddr, page->rights);
+        }
+    }
+    
+    return (ret == 0) ? page : NULL;
 }
 
 unsigned char* find_frame_data(uintptr_t vaddr, pgd_t *pgd) {

@@ -15,7 +15,7 @@
 #include "mapping.h"
 #include "vmem_layout.h"
 #include <utils/list.h>
-
+#include "page_swap.h"
 /**
  * Retypes and maps a page table into the root servers page global directory
  * @param cspace that the cptrs refer to
@@ -193,12 +193,13 @@ seL4_Error alloc_map_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *us
     page_metadata->frame_cap = frame_cptr;
     page_metadata->reference_bit = 1;
     page_metadata->pagefile_offset = -1;
-
+    page_metadata->rights = rights;
+    
     uintptr_t aligned_vaddr = PAGE_ALIGN_4K(vaddr); /* seL4 page map methods only accepts vaddr that aligns with the size of a Page (4KB) */
 
     err = sos_map_frame(cspace, page_metadata, aligned_vaddr,
                     rights, seL4_ARM_Default_VMAttributes, user_process);
-    
+
     if (err != seL4_NoError) {
         // delete the cap and free the allocated slot
         cspace_delete(cspace, frame_cptr);
@@ -214,6 +215,7 @@ seL4_Error alloc_map_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *us
         return err;
     }
 
+    in_memory_pages_add(page_metadata);
     return seL4_NoError;
 }
 

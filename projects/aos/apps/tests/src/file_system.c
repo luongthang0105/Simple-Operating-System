@@ -11,6 +11,8 @@
 #include <syscalls.h>
 /* Your OS header file */
 #include <sos.h>
+#include <tests/file_system.h>
+#include <tests/macros.h>
 
 #define BUF_SIZE    6144
 #define MAX_ARGS   32
@@ -132,25 +134,25 @@ int test_write_file_opened_with_read_mode() {
 }
 
 int test_file_system() {
+    printf("==========FILE SYSTEM============\n");
     // open console
-    test_open_console();
-    test_open_console_with_two_readers();
-    test_open_console_with_multiple_writers();
-    test_open_console_with_read_and_write();
+    RUN_TEST(test_open_console);
+    RUN_TEST(test_open_console_with_two_readers);
+    RUN_TEST(test_open_console_with_multiple_writers);
+    RUN_TEST(test_open_console_with_read_and_write);
 
     // open normal files
-    test_open_non_existent_file();
+    RUN_TEST(test_open_non_existent_file);
 
     // read from file
-    test_read_file_opened_with_read_mode();
-    test_read_file_opened_with_readwrite_mode();
-    test_read_file_opened_with_write_mode();
+    RUN_TEST(test_read_file_opened_with_read_mode);
+    RUN_TEST(test_read_file_opened_with_readwrite_mode);
+    RUN_TEST(test_read_file_opened_with_write_mode);
 
     // write to file
-    test_write_file_opened_with_write_mode();
+    RUN_TEST(test_write_file_opened_with_write_mode);
+    
     // file stat
-
-    printf("File system test\tPassed\n");
 }
 
 

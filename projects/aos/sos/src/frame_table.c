@@ -19,6 +19,7 @@
 #include <utils/util.h>
 #include <sos/gen_config.h>
 #include "page_swap.h"
+#include "backtrace.h"
 
 /* Debugging macro to get the human-readable name of a particular list. */
 #define LIST_NAME(list) LIST_ID_NAME(list->list_id)
@@ -126,9 +127,13 @@ frame_ref_t alloc_frame(void)
     if (frame != NULL) {
         push_back(&frame_table.allocated, frame);
     } else { /* ran out of frames, must swap out a page!! */
-        frame = evict_page();
+        evict_page();
+        frame = pop_front(&frame_table.free);
         assert(frame != NULL_FRAME);
+        push_back(&frame_table.allocated, frame);
     }
+    unsigned char *data = frame_data(ref_from_frame(frame));
+    memset(data, 0, PAGE_SIZE_4K);
     return ref_from_frame(frame);
 }
 
@@ -251,6 +256,9 @@ static frame_t *pop_front(frame_list_t *list)
 static void remove_frame(frame_list_t *list, frame_t *frame)
 {
     assert(frame != NULL);
+    if (frame->list_id != list->list_id) {
+        print_backtrace();
+    }
     assert(frame->list_id == list->list_id);
 
     if (frame->prev != NULL_FRAME) {

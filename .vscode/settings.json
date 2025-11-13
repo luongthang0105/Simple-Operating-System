@@ -40,6 +40,10 @@
         "util.h": "c",
         "vm_region.h": "c",
         "cap_utils.h": "c",
-        "libnfs.h": "c"
+        "libnfs.h": "c",
+        "assert.h": "c",
+        "string.h": "c",
+        "simple_types.h": "c",
+        "file_system.h": "c"
     }
 }

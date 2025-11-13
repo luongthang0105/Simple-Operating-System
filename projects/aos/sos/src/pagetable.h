@@ -12,6 +12,7 @@ struct page_metadata
     seL4_CPtr frame_cap;
     int reference_bit;
     int pagefile_offset;
+    seL4_CapRights_t rights;
 };
 typedef struct page_metadata page_metadata_t;
 

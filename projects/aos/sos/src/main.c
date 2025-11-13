@@ -105,7 +105,7 @@ static seL4_CPtr sched_ctrl_start;
 static seL4_CPtr sched_ctrl_end;
 
 /* the one process we start */
-static user_process_t user_process;
+extern user_process_t user_process;
 
 struct syscall_loop_args {
     seL4_CPtr ep;
@@ -113,7 +113,7 @@ struct syscall_loop_args {
 };
 
 struct sos_open_callback_private_data {
-    seL4_CPtr ntfn;
+    int thread_index;
     int fd;
     int err;
 };
@@ -176,6 +176,7 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
             ZF_LOGI("vaddr %p is not mapped to any frame, trying to allocate frame...", (void*)to_vaddr);
             vm_region_t *valid_region = find_valid_region(to_vaddr, BIT(6), user_process.vm_regions);
 
+            printf("valid region: %p\n", valid_region->vaddr_base);
             if (valid_region == NULL) {
                 ZF_LOGE("vaddr %p resolves to an invalid region access", (void*)to_vaddr);
                 return 0;
@@ -198,8 +199,8 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
         size_t max_bytes_to_copy = PAGE_SIZE_4K - offset;
         size_t bytes_to_copy = MIN(rem_bytes, max_bytes_to_copy);
         
-        char *temp = (char*) from;
-        memcpy(&source_data[offset], &temp[bytes_copied], bytes_to_copy);
+        // char *temp = (char*) from;
+        memcpy(source_data + offset, from + bytes_copied, bytes_to_copy);
 
         rem_bytes -= bytes_to_copy;
         to_vaddr += bytes_to_copy;
@@ -210,20 +211,20 @@ static size_t copy_to_user(void* to, const void* from, size_t nbyte) {
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
     struct sos_open_callback_private_data *ret_private_data =  (struct sos_open_callback_private_data *)private_data;
 
-    seL4_CPtr ntfn    = ret_private_data->ntfn;
+    int thread_index    = ret_private_data->thread_index;
     int fd              = ret_private_data->fd;
 
     if (err < 0) {
         ZF_LOGE("error: %d, error msg: %s\n", err, (char*)data);
         ret_private_data->err = err;
-        seL4_Signal(ntfn);
+        seL4_Signal(worker_threads[thread_index]->ntfn);
         return;
     }
     
     struct nfsfh *nfsfh = (struct nfsfh *)data;
     user_process.vfs->fd_table[fd].fh = nfsfh;
 
-    seL4_Signal(ntfn);
+    seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 
 void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
@@ -291,7 +292,7 @@ int handler_sos_open_nwcs(fmode_t mode) {
 }
 
 void handler_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index) {
-    ZF_LOGE("syscall: stat!\n");
+    ZF_LOGV("syscall: stat!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     uintptr_t path_vaddr        = seL4_GetMR(1);
@@ -338,11 +339,11 @@ void handler_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index) {
 }   
 
 void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
-    ZF_LOGE("syscall: open!\n");
+    ZF_LOGV("syscall: open!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     uintptr_t path_vaddr    = seL4_GetMR(1);
-    int path_len            = seL4_GetMR(2) + 1; // now includes null terminator
+    size_t path_len         = seL4_GetMR(2);
     fmode_t mode            = seL4_GetMR(3);
 
     unsigned char *path_data = find_frame_data(path_vaddr, user_process.page_global_directory);
@@ -351,12 +352,13 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;
     }
 
-    char *temp_path_buf = malloc(path_len);
+    char *temp_path_buf = malloc(path_len + 1);
     if (temp_path_buf == NULL) {
         ZF_LOGE("Failed to allocate memory for temp_path_buf");
         seL4_SetMR(0, -1);
         return;        
     }
+    temp_path_buf[path_len] = '\0';
 
     size_t nbyte = copy_from_user((void *)temp_path_buf, (void *)path_vaddr, path_len);
 
@@ -384,11 +386,7 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;        
     }
 
-    /* Create a notification object */
-    seL4_CPtr ntfn;
-    ut_t *ut = create_cap(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
-
-    private_data->ntfn          = ntfn;
+    private_data->thread_index  = thread_index;
     private_data->fd            = fd;
     private_data->err           = 0;
 
@@ -402,11 +400,10 @@ void handler_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index) {
         return;
     }
 
-    seL4_Wait(ntfn, NULL);
+    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
 
     err = private_data->err;
     free(private_data);
-    free_cap(ut, ntfn);
 
     if (err) {
         free(temp_path_buf);
@@ -441,7 +438,7 @@ void nfs_close_cb(int status, struct nfs_context *nfs, void *data, void *private
 }
 
 void handler_sos_close(seL4_MessageInfo_t *reply_msg, int thread_index) {
-    ZF_LOGE("syscall: close!\n");
+    ZF_LOGV("syscall: close!\n");
     *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     size_t fd = seL4_GetMR(1);    
@@ -461,7 +458,7 @@ void handler_sos_close(seL4_MessageInfo_t *reply_msg, int thread_index) {
     if (fd == CONSOLE_FD) {
         user_process.vfs->fd_table[fd].is_opened = false;
         user_process.vfs->fd_table[fd].mode = -1;
-        free(user_process.vfs->fd_table[fd].path);
+        user_process.vfs->fd_table[fd].path = NULL; // do not free console_fd path, it's a string literal, not memory allocated from the heap
         seL4_SetMR(0, 0);
         return;
     }
@@ -496,15 +493,15 @@ typedef struct {
 } nfs_write_cb_args_t;
 
 void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
-    if (status < 0) {
-        ZF_LOGE("nfs_write failed with error: %s\n", (char*)data);
-        return;
-    }
-
     nfs_write_cb_args_t *args = private_data;
     size_t thread_index = args->thread_index;
     args->bytes_written = status;
 
+    if (status < 0) {
+        ZF_LOGE("nfs_write failed with error: %s\n", (char*)data);
+        seL4_Signal(worker_threads[thread_index]->ntfn);
+        return;
+    }
     seL4_Signal(worker_threads[thread_index]->ntfn);
     return;
 }
@@ -517,9 +514,9 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
     
     uintptr_t buf_vaddr     = seL4_GetMR(1);
     size_t nbytes           = seL4_GetMR(2);
-    size_t file_desc        = seL4_GetMR(3);
+    int file_desc           = seL4_GetMR(3);
     
-    if (nbytes >= BREAKDOWN_THRESHOLD) {
+    if (nbytes > BREAKDOWN_THRESHOLD) {
         ZF_LOGE("nbytes to write is too large!");
         seL4_SetMR(0, -1);
         return;
@@ -563,7 +560,7 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
         struct nfs_context *nfs_context = get_nfs_context();
 
         nfs_write_cb_args_t args = {.thread_index = thread_index};
-        int ret = nfs_write_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes, temp_buf,
+        int ret = nfs_write_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes, (const void *)temp_buf,
                         nfs_write_cb, (void*)&args);
         if (ret < 0) {
             ZF_LOGE("Failed to queue nfs_write_async");
@@ -590,19 +587,20 @@ void handler_sos_write(seL4_MessageInfo_t *reply_msg, size_t thread_index) {
 typedef struct {
     size_t thread_index;
     size_t bytes_read;
-    void *user_buf_vaddr;
+    unsigned char *data;
 } nfs_read_cb_args_t;
 
 void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
+    nfs_read_cb_args_t *args = private_data;
+    args->bytes_read = status;
+
     if (status < 0) {
         ZF_LOGE("nfs_read failed with error: %s\n", (char*)data);
+        seL4_Signal(worker_threads[args->thread_index]->ntfn);
         return;
     }
 
-    nfs_read_cb_args_t *args = private_data;
-
-    args->bytes_read = copy_to_user(args->user_buf_vaddr, data, status);
-
+    memcpy(args->data, data, status);
     seL4_Signal(worker_threads[args->thread_index]->ntfn);
     return;
 }
@@ -618,7 +616,7 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
     size_t nbytes           = seL4_GetMR(2);
     int file_desc           = seL4_GetMR(3);
 
-    if (nbytes >= BREAKDOWN_THRESHOLD) {
+    if (nbytes > BREAKDOWN_THRESHOLD) {
         ZF_LOGE("nbytes to read is too large!");
         seL4_SetMR(0, -1);
         return;
@@ -650,8 +648,8 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
             return;
         }
         struct nfs_context *nfs_context = get_nfs_context();
-
-        nfs_read_cb_args_t args = {.thread_index = thread_index, .user_buf_vaddr = buf_vaddr};
+        unsigned char *data = malloc(nbytes);
+        nfs_read_cb_args_t args = {.thread_index = thread_index, .data = data};
         int ret = nfs_read_async(nfs_context, user_process.vfs->fd_table[file_desc].fh, nbytes,
                         nfs_read_cb, (void*)&args);
         if (ret < 0) {
@@ -660,9 +658,12 @@ void handler_sos_read(seL4_MessageInfo_t *reply_msg, int thread_index) {
             return;
         }
         seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+        
+        copy_to_user(buf_vaddr, args.data, args.bytes_read);
 
-        size_t bytes_read = args.bytes_read;
-        seL4_SetMR(0, bytes_read);
+        free(data);
+
+        seL4_SetMR(0, args.bytes_read);
         return;
     } else {
         char* temp_buf = malloc(nbytes);
@@ -897,28 +898,23 @@ void write_to_buf(UNUSED struct network_console *network_console, char c) {
     }
 }
 int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
-    // get the vaddr and action of this fault
-    uintptr_t faultaddr = ROUND_DOWN(seL4_Fault_VMFault_get_Addr(fault), PAGE_SIZE_4K);
+    uintptr_t original_faultadrr = seL4_Fault_VMFault_get_Addr(fault);
     seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
 
     // find the vm_region that this faultaddr lies within
-    vm_region_t *valid_region = find_valid_region(faultaddr, fsr, user_process.vm_regions);
+    vm_region_t *valid_region = find_valid_region(original_faultadrr, fsr, user_process.vm_regions);
     if (valid_region == NULL) {
-        ZF_LOGE("Fault address %p resolves to an invalid region access", (void*)faultaddr);
+        ZF_LOGE("Fault address %p resolves to an invalid region access", (void*)original_faultadrr);
         return -1;
     }
     
+    uintptr_t faultaddr = PAGE_ALIGN_4K(original_faultadrr);
     // find the associated page of this faultaddr
-    page_metadata_t *page = find_page(faultaddr, user_process.page_global_directory);
-    if (page != NULL) { /* page is either on disk or in memory */
-        if (page->pagefile_offset != -1) {   /* page is on disk */
-            return swap_to_mem(page, worker_thread_ntfn);
-        } else {                             /* page is still in memory */
-            return reference_page(page, user_process.vspace, faultaddr, valid_region->rights);
-        }
-    } else { /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
+    page_metadata_t *page = find_page(original_faultadrr, user_process.page_global_directory);
+    if (page == NULL) {  /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
         return alloc_map_frame(&cspace, faultaddr, &user_process, valid_region->rights);
     }
+    return 0;
 }
 
 seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_CPtr worker_thread_ntfn) {
@@ -928,6 +924,7 @@ seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_C
     seL4_Uint64 fault_type = seL4_Fault_get_seL4_FaultType(fault);
 
     switch (fault_type) {
+        
         case seL4_Fault_VMFault:
             ret = handle_vm_fault(fault, worker_thread_ntfn);
             break;
@@ -1419,8 +1416,8 @@ NORETURN void *main_continued(UNUSED void *arg)
 
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
-    seL4_Error err = debugger_init(&cspace, seL4_CapIRQControl, gdb_recv_ep);
-    ZF_LOGF_IF(err, "Failed to initialize debugger %d", err);
+    seL4_Error debug_err = debugger_init(&cspace, seL4_CapIRQControl, gdb_recv_ep);
+    ZF_LOGF_IF(debug_err, "Failed to initialize debugger %d", debug_err);
     char secret_string[15] = "Welcome to AOS!";
 #endif /* CONFIG_SOS_GDB_ENABLED */
 
@@ -1446,6 +1443,8 @@ NORETURN void *main_continued(UNUSED void *arg)
         
         /* Start the worker thread */
         struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+        ZF_LOGF_IF(!worker_sys_loop_args, "Failed to allocate memory to worker_sys_loop_args");
+
         sos_thread_t* thread = thread_create(syscall_loop, worker_sys_loop_args, i + 1, false, seL4_MinPrio, thread_ntfn, true);
         
         // worker thread IPC EP is created within 
@@ -1456,17 +1455,29 @@ NORETURN void *main_continued(UNUSED void *arg)
         worker_threads[i] = thread;
     }
 
+    /* Worker thread for handling interrupts */
+    struct syscall_loop_args *interrupts_handler_args = malloc(sizeof(struct syscall_loop_args));
+    ZF_LOGF_IF(!interrupts_handler_args, "Failed to allocate memory to interrupts_handler_args");
+
+    interrupts_handler_args->ep = ipc_ep;
+
+    // unbinds ntfn from init thread TCB, because we're going to bind ntfn to the interrupts handler thread
+    seL4_Error err = seL4_TCB_UnbindNotification(seL4_CapInitThreadTCB);
+    ZF_LOGF_IF(err != seL4_NoError, "Failed to unbind notification from init thread TCB, seL4_Error=%d", err);
+
+    thread_create(syscall_loop, interrupts_handler_args, MAX_WORKER_THREADS + 1, true, seL4_MaxPrio, ntfn, true);
 
     /* Start user process */
     printf("Start first process\n");
     bool success = start_first_process(APP_NAME, worker_threads[0]->ipc_ep);
     ZF_LOGF_IF(!success, "Failed to start first process");
-    
+    struct syscall_loop_args *main_thread_args = malloc(sizeof(struct syscall_loop_args));
+    ZF_LOGF_IF(!main_thread_args, "Failed to allocate memory to main_thread_args");
 
-    /* Main thread needs to enter syscall loop as well, for handling interrupts */
-    struct syscall_loop_args *main_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
-    main_sys_loop_args->ep = ipc_ep;
-    syscall_loop(main_sys_loop_args);
+    seL4_CPtr main_thread_ipc_ep;
+    create_cap(&main_thread_ipc_ep, seL4_EndpointObject, seL4_EndpointBits);
+    main_thread_args->ep = ipc_ep;
+    syscall_loop(main_thread_args);
 }
 /*
  * Main entry point - called by crt.
