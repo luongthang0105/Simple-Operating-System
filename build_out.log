@@ -495,7 +495,7 @@ In file included from ../projects/libutils/include/utils/util.h:46,
 ../projects/aos/sos/src/main.c:220:53: warning: unused parameter ‘nfs’ [-Wunused-parameter]
   220 | void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *private_data) {
       |                                 ~~~~~~~~~~~~~~~~~~~~^~~
-../projects/aos/sos/src/main.c: In function ‘handler_sos_stat’:
+../projects/aos/sos/src/main.c: In function ‘handle_sos_stat’:
 ../projects/aos/sos/src/main.c:279:50: warning: passing argument 2 of ‘copy_from_user’ makes pointer from integer without a cast [-Wint-conversion]
   279 |     size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
       |                                                  ^~~~~~~~~~
@@ -507,7 +507,7 @@ In file included from ../projects/libutils/include/utils/util.h:46,
 ../projects/aos/sos/src/main.c:279:12: warning: unused variable ‘nbyte’ [-Wunused-variable]
   279 |     size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
       |            ^~~~~
-../projects/aos/sos/src/main.c: In function ‘handler_sos_open’:
+../projects/aos/sos/src/main.c: In function ‘handle_sos_open’:
 ../projects/aos/sos/src/main.c:339:50: warning: passing argument 2 of ‘copy_from_user’ makes pointer from integer without a cast [-Wint-conversion]
   339 |     size_t nbyte = copy_from_user(temp_path_buf, path_vaddr, path_len);
       |                                                  ^~~~~~~~~~
@@ -527,7 +527,7 @@ In file included from ../projects/libutils/include/utils/util.h:46,
 ../projects/aos/sos/src/main.c:457:51: warning: unused parameter ‘nfs’ [-Wunused-parameter]
   457 | void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
       |                               ~~~~~~~~~~~~~~~~~~~~^~~
-../projects/aos/sos/src/main.c: In function ‘handler_sos_write’:
+../projects/aos/sos/src/main.c: In function ‘handle_sos_write’:
 ../projects/aos/sos/src/main.c:487:19: warning: comparison of unsigned expression < 0 is always false [-Wtype-limits]
   487 |     if (file_desc < 0 || file_desc >= PROCESS_MAX_FILES) {
       |                   ^
@@ -554,7 +554,7 @@ In file included from ../projects/libutils/include/utils/util.h:46,
 ../projects/aos/sos/src/main.c:555:50: warning: unused parameter ‘nfs’ [-Wunused-parameter]
   555 | void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_data) {
       |                              ~~~~~~~~~~~~~~~~~~~~^~~
-../projects/aos/sos/src/main.c: In function ‘handler_sos_read’:
+../projects/aos/sos/src/main.c: In function ‘handle_sos_read’:
 ../projects/aos/sos/src/main.c:606:84: warning: initialization of ‘void *’ from ‘uintptr_t’ {aka ‘long unsigned int’} makes pointer from integer without a cast [-Wint-conversion]
   606 |         nfs_read_cb_args_t args = {.thread_index = thread_index, .user_buf_vaddr = buf_vaddr};
       |                                                                                    ^~~~~~~~~

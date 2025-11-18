@@ -44,6 +44,23 @@
         "assert.h": "c",
         "string.h": "c",
         "simple_types.h": "c",
-        "file_system.h": "c"
+        "file_system.h": "c",
+        "vsyscall.h": "c",
+        "sys_open.h": "c",
+        "threads.h": "c",
+        "sys_close.h": "c",
+        "sys_write.h": "c",
+        "sys_read.h": "c",
+        "types.h": "c",
+        "constants.h": "c",
+        "shared_types_gen.h": "c",
+        "stdlib.h": "c",
+        "clock.h": "c",
+        "syscall_handler.h": "c",
+        "debugger.h": "c",
+        "backtrace.h": "c",
+        "errno.h": "c",
+        "attribute.h": "c",
+        "autoconf.h": "c"
     }
 }

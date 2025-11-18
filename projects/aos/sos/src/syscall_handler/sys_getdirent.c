@@ -1,0 +1,80 @@
+#include "sys_getdirent.h"
+#include "../user_process.h"
+#include "../threads.h"
+
+extern user_process_t user_process;
+extern sos_thread_t *worker_threads[MAX_WORKER_THREADS];
+
+void nfs_opendir_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
+{
+    if (status < 0)
+    {
+        user_process.curr_dir = NULL;
+        ZF_LOGE("nfs_opendir failed with error: %s\n", (char *)data);
+        return;
+    }
+
+    user_process.curr_dir = (struct nfsdir *)data;
+
+    int thread_index = ((nfs_opendir_cb_args_t *)private_data)->thread_index;
+    seL4_Signal(worker_threads[thread_index]->ntfn);
+
+    return;
+}
+
+void handle_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index)
+{
+    ZF_LOGV("syscall: getdirent!\n");
+    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
+
+    size_t pos = seL4_GetMR(1);
+    uintptr_t buf_vaddr = seL4_GetMR(2);
+    size_t nbyte = seL4_GetMR(3);
+
+    struct nfs_context *nfs_context = get_nfs_context();
+
+    // calls opendir to get struct nfsdir*
+    nfs_opendir_cb_args_t args = {.thread_index = thread_index};
+    int ret = nfs_opendir_async(nfs_context, "./", nfs_opendir_cb, (void *)&args);
+    if (ret < 0)
+    {
+        ZF_LOGE("Failed to queue nfs_opendir_async");
+        seL4_SetMR(0, -1);
+        return;
+    }
+
+    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+
+    // calls nfs_readdir to read the expected entry (struct dirent*)
+    struct nfsdirent *nfsdirent;
+    for (size_t i = 0; i <= pos; ++i)
+    {
+        nfsdirent = nfs_readdir(nfs_context, user_process.curr_dir);
+        if (nfsdirent == NULL)
+        {
+            if (i == pos)
+            { // pos is right after the last entry
+                seL4_SetMR(0, 0);
+                return;
+            }
+            else
+            { // otherwise, treat this as non-existent entry
+                seL4_SetMR(0, -1);
+                return;
+            }
+        }
+    }
+    // gets the name field, and copy it to the name buf (including null terminator)
+    size_t bytes_to_copy = MIN(nbyte, strlen(nfsdirent->name) + 1);
+    int status = copy_to_user((void *)buf_vaddr, (void *)nfsdirent->name, bytes_to_copy);
+
+    if (status == 0)
+    {
+        seL4_SetMR(0, bytes_to_copy);
+    }
+    else
+    {
+        seL4_SetMR(0, -1);
+    }
+    return;
+}

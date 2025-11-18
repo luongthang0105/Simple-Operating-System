@@ -38,4 +38,15 @@ struct user_process {
     vfs_t* vfs;
 };
 typedef struct user_process user_process_t;
-user_process_t user_process;
+extern user_process_t user_process;
+
+/** Copy data from SOS to user app.
+ *  @returns 0 if `nbyte` was successfully copied, -1 otherwise.
+*/
+int copy_to_user(void* to, const void* from, size_t nbyte);
+
+/** 
+ * Copy data from user app to SOS. 
+ * @returns 0 if `nbyte` was successfully copied, -1 otherwise.
+*/
+int copy_from_user(void* to, const void* from, size_t nbyte);

@@ -122,7 +122,6 @@ static void thrash() {
 
 void test_virtual_memory()
 {
-    printf("==========VIRTUAL MEMORY============\n");
     RUN_TEST(stack_test);
     RUN_TEST(heap_test);
     RUN_TEST(thrash);

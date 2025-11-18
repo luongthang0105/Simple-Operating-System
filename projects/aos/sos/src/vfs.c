@@ -8,6 +8,9 @@ void vfs_init(vfs_t *vfs) {
         vfs->fd_table[i].path = NULL;
         vfs->fd_table[i].mode = -1;
     }
+    vfs->fd_table[CONSOLE_FD].is_opened = true;
+    vfs->fd_table[CONSOLE_FD].path = "console";
+    vfs->fd_table[CONSOLE_FD].mode = O_WRONLY;
 }
 
 int find_next_fd(vfs_t *vfs) {

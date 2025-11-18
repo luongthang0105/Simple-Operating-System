@@ -15,6 +15,8 @@
 #include <cspace/cspace.h>
 #include <nfsc/libnfs.h>
 
+extern bool has_init_network;
+
 /**
  * Initialises the network stack
  *

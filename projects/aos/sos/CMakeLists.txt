@@ -71,6 +71,19 @@ add_executable(
     src/vfs.c
     src/page_swap.c
     src/cap_utils.c
+    src/user_process.c
+    src/syscall_handler/syscall_handler.c
+    src/syscall_handler/sys_open.c
+    src/syscall_handler/sys_stat.c
+    src/syscall_handler/sys_close.c
+    src/syscall_handler/sys_read.c
+    src/syscall_handler/sys_write.c
+    src/syscall_handler/sys_getdirent.c
+    src/syscall_handler/sys_brk.c
+    src/syscall_handler/sys_usleep.c
+    src/syscall_handler/sys_timestamp.c
+    src/fault_handler/fault_handler.c
+    src/fault_handler/vm_fault.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(

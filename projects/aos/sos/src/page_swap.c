@@ -19,7 +19,6 @@ struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
 struct nfs_context *nfs;
 bool has_init_page_swap = false;
 
-
 typedef struct nfs_open_pagefile_cb_args {
     seL4_CPtr ntfn;
 } nfs_open_pagefile_cb_args_t;
@@ -153,8 +152,6 @@ static size_t free_pagefile_offsets_pop() {
 }
 
 static void write_to_pagefile(page_metadata_t *page_metadata) {
-    // printf("------------write to pagefile-------------\n");
-
     unsigned char* frame_content = frame_data(page_metadata->frame_ref);
     // offset to the available space in pagefile
     size_t available_offset = free_pagefile_offsets_pop();

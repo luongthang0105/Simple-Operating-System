@@ -14,7 +14,7 @@
 #include <tests/file_system.h>
 #include <tests/macros.h>
 
-#define BUF_SIZE    6144
+#define BUF_SIZE   6144
 #define MAX_ARGS   32
 static int fd;
 static sos_stat_t sbuf;
@@ -134,8 +134,7 @@ int test_write_file_opened_with_read_mode() {
 }
 
 int test_file_system() {
-    printf("==========FILE SYSTEM============\n");
-    // open console
+    // // open console
     RUN_TEST(test_open_console);
     RUN_TEST(test_open_console_with_two_readers);
     RUN_TEST(test_open_console_with_multiple_writers);

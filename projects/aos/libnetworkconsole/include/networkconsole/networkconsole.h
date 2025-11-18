@@ -30,3 +30,5 @@ int network_console_send(struct network_console *network_console, char *data, in
  */
 int network_console_register_handler(struct network_console *network_console,
                         void (*handler)(struct network_console *network_console, char c));
+
+struct network_console *get_nwcs();

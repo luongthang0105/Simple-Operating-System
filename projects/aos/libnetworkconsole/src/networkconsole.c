@@ -34,6 +34,9 @@ struct network_console {
 static char buf[MAX_PAYLOAD_SIZE];
 static struct network_console network_console = {};
 
+struct network_console *get_nwcs() {
+    return &network_console;
+}
 /*
  * This function will be called from the network stack on any networking event, such as receiving data.
  * If you have a registered handler to receive incoming data, it gets called from here. 

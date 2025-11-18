@@ -1,6 +1,8 @@
 #pragma once
 #include "pagetable.h"
 
+extern bool has_init_page_swap;
+
 /*  If current queue is full, evict a page from its allocated frame using the second-chance replacement policy.
     Otherwise, do nothing. After calling `evict_page()`, it is guaranteed that there is at least one free frame in the frame table.
 */
