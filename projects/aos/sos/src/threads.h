@@ -58,4 +58,3 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
                             seL4_CPtr bound_ntfn, bool debugger_add);
 int thread_suspend(sos_thread_t *thread);
 int thread_resume(sos_thread_t *thread);
-uint64_t get_current_thread_id(void);

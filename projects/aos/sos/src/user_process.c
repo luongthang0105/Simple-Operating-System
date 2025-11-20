@@ -3,20 +3,18 @@
 #include "threads.h"
 extern cspace_t cspace;
 
-user_process_t *user_processes[MAX_NUM_PROCESSES] = {0};
+user_process_t *user_processes[MAX_NUM_PROCESSES] = {NULL};
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t *, arr, i, j, MAX_NUM_PROCESSES);
 pid_queue_t free_pids = {.arr = {0}, .i = 0, .j = 0};
 
 user_process_t *get_current_user_process_by_thread(uint64_t thread_id)
 {
-    pid_t assigned_pid = worker_threads[thread_id]->assigned_pid;
+    uint32_t assigned_pid = worker_threads[thread_id]->assigned_pid;
     return user_processes[assigned_pid];
 }
 user_process_t *get_current_user_process()
 {
-    uint64_t thread_id = get_current_thread_id();
-    pid_t assigned_pid = worker_threads[thread_id]->assigned_pid;
-    return user_processes[assigned_pid];
+    return get_current_user_process_by_thread(current_thread->thread_id);
 }
 
 int copy_from_user(void *to, const void *from, size_t nbyte)

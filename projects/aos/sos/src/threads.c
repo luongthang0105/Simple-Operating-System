@@ -46,12 +46,6 @@ void init_threads(seL4_CPtr _ipc_ep, seL4_CPtr _fault_ep, seL4_CPtr sched_ctrl_s
     sched_ctrl_end = sched_ctrl_end_;
 }
 
-uint64_t get_current_thread_id(void) {
-    uint64_t val;
-    asm volatile("mrs %0, tpidr_el0" : "=r"(val));
-    return val;
-}
-
 /* leaking a lot of memory if failed! */
 static bool alloc_stack(seL4_Word *sp)
 {
@@ -282,8 +276,7 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
         .x0 = (seL4_Word) new_thread,
         .x1 = (seL4_Word) function,
         .x2 = (seL4_Word) arg,
-        .x3 = (seL4_Word) debugger_add,
-        .tpidr_el0 = thread_id
+        .x3 = (seL4_Word) debugger_add
     };
     
     ZF_LOGD(resume ? "Starting new sos thread at %p\n"
