@@ -288,7 +288,6 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
  */
 bool start_first_process(char *app_name, seL4_CPtr ep, pid_t pid)
 {      
-    printf("pid: %d\n", get_current_thread_id());
     user_process_t *user_process = user_processes[pid];
     /* Create a VSpace */
     user_process->vspace_ut = alloc_retype(&user_process->vspace, seL4_ARM_PageGlobalDirectoryObject,
@@ -313,6 +312,10 @@ bool start_first_process(char *app_name, seL4_CPtr ep, pid_t pid)
     
     /* Initialise the virtual file system */
     user_process->vfs = malloc(sizeof(vfs_t));
+    if (!user_process->vfs) {
+        ZF_LOGE("Failed to alloc vfs");
+        return false;
+    }
     vfs_init(user_process->vfs);
 
     /* Initialise a linked list of frame refs */
@@ -670,7 +673,7 @@ NORETURN void *main_continued(UNUSED void *arg)
     args->thread_index = 0;
 
     // TODO: fix this to use the pid queue
-    pid_t available_pid = 0;
+    uint32_t available_pid = 0;
     worker_threads[0]->assigned_pid = available_pid;
 
     thread_resume(thread);

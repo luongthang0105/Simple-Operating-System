@@ -19,7 +19,9 @@
 extern cspace_t cspace;
 
 typedef struct {
-    pid_t assigned_pid;
+    uint32_t assigned_pid;
+    uint32_t thread_id;
+    
     ut_t *tcb_ut;
     seL4_CPtr tcb;
 

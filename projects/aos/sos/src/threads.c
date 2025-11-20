@@ -90,9 +90,6 @@ int thread_resume(sos_thread_t *thread)
 /* trampoline code for newly started thread */
 static void thread_trampoline(sos_thread_t *thread, thread_main_f *function, void *arg, bool debugger_add)
 {
-    seL4_UserContext regs;
-    printf("thread id: %d\n", get_current_thread_id());
-
     sel4runtime_set_tls_base(thread->tls_base);
     seL4_SetIPCBuffer((seL4_IPCBuffer *) thread->ipc_buffer_vaddr);
     current_thread = thread;
@@ -121,6 +118,7 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
         return NULL;
     }
 
+    new_thread->thread_id = thread_id;
     new_thread->badge = badge;
 
     /* Create an IPC buffer */
