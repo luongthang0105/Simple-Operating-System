@@ -79,4 +79,4 @@ int copy_from_user(void *to, const void *from, size_t nbyte);
 
 // TODO: add comment
 user_process_t *get_current_user_process_process();
-user_process_t *get_current_user_process_process_by_thread(uint64_t thread_id);
+user_process_t *get_current_user_process_by_thread(uint64_t thread_id);
