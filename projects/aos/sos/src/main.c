@@ -185,7 +185,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     }
 
     /* allocate a stack frame for the user application*/
-    seL4_Error err = alloc_map_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
+    seL4_Error err = alloc_map_frame(cspace, stack_bottom, user_process, seL4_ReadWrite);
     page_metadata_t *page = find_page(stack_bottom, user_process->page_global_directory);
     user_process->stack = page->frame_cap;
 
@@ -264,7 +264,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     /* Exend the stack with extra pages */
     for (int page = 0; page < INITIAL_PROCESS_STACK_PAGES; page++) {
         stack_bottom -= PAGE_SIZE_4K;
-        int result = alloc_map_frame(cspace, stack_bottom, &user_process, seL4_ReadWrite);
+        int result = alloc_map_frame(cspace, stack_bottom, user_process, seL4_ReadWrite);
         if (result != 0) {
             ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)stack_bottom);
             return 0;
@@ -430,7 +430,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep, pid_t pid)
     seL4_Word sp = init_process_stack(&cspace, seL4_CapInitThreadVSpace, &elf_file, pid);
 
     /* load the elf image from the cpio file */
-    err = elf_load(&cspace, &elf_file, &user_process);
+    err = elf_load(&cspace, &elf_file, user_process);
     if (err) {
         ZF_LOGE("Failed to load elf image");
         return false;

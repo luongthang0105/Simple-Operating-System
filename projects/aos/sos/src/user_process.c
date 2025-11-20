@@ -75,7 +75,7 @@ int copy_to_user(void *to, const void *from, size_t nbyte)
                 return -1;
             }
 
-            int result = alloc_map_frame(&cspace, to_vaddr, &user_process, valid_region->rights);
+            int result = alloc_map_frame(&cspace, to_vaddr, user_process, valid_region->rights);
             if (result != 0)
             {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", (void *)to_vaddr);

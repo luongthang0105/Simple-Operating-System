@@ -21,7 +21,7 @@ int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
     // find the associated page of this faultaddr
     page_metadata_t *page = find_page(original_faultadrr, user_process->page_global_directory);
     if (page == NULL) {  /* faultaddr has not been mapped, try alloc a frame and map that frame to faultaddr */
-        return alloc_map_frame(&cspace, faultaddr, &user_process, valid_region->rights);
+        return alloc_map_frame(&cspace, faultaddr, user_process, valid_region->rights);
     }
     return 0;
 }

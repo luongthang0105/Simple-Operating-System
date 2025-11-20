@@ -1,7 +1,6 @@
 #include <sel4/shared_types_gen.h>
 #include "../user_process.h"
 
-extern user_process_t user_process;
 extern cspace_t cspace;
 
 void handle_sos_brk(seL4_MessageInfo_t *reply_msg) {
@@ -37,7 +36,7 @@ void handle_sos_brk(seL4_MessageInfo_t *reply_msg) {
         uintptr_t next_page_vaddr_to_alloc = ROUND_UP(curr_brk, PAGE_SIZE_4K);
     
         while (next_page_vaddr_to_alloc < new_brk) {
-            int result = alloc_map_frame(&cspace, next_page_vaddr_to_alloc, &user_process, user_process->heap_region->rights);
+            int result = alloc_map_frame(&cspace, next_page_vaddr_to_alloc, user_process, user_process->heap_region->rights);
             if (result != 0) {
                 ZF_LOGE("Unable to allocate a new frame at %p!\n", (void*)next_page_vaddr_to_alloc);
                 seL4_SetMR(0, 0);
