@@ -4,12 +4,27 @@
 extern cspace_t cspace;
 
 user_process_t *user_processes[MAX_NUM_PROCESSES] = {NULL};
-SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t *, arr, i, j, MAX_NUM_PROCESSES);
+SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t, arr, i, j, MAX_NUM_PROCESSES + 1);
 pid_queue_t free_pids = {.arr = {0}, .i = 0, .j = 0};
+
+void init_free_pids() {
+    for (sos_pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
+        /*  let timestamp be 0 initially, so that it would always be available to use at first. */
+        pid_free_record_t record = { .pid = pid, .freed_timestamp = 0 };
+        sglib_pid_queue_t_add(&free_pids, record);
+    }
+}
+
+sos_pid_t get_available_pid() {
+    // TODO: check if record has pass a certain amount of time to avoid race condition
+    pid_free_record_t record = sglib_pid_queue_t_first_element(&free_pids);
+    sglib_pid_queue_t_delete_first(&free_pids);
+    return record.pid;
+}
 
 user_process_t *get_current_user_process_by_thread(uint64_t thread_id)
 {
-    uint32_t assigned_pid = worker_threads[thread_id]->assigned_pid;
+    sos_pid_t assigned_pid = worker_threads[thread_id]->assigned_pid;
     return user_processes[assigned_pid];
 }
 user_process_t *get_current_user_process()

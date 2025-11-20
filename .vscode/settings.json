@@ -61,6 +61,7 @@
         "backtrace.h": "c",
         "errno.h": "c",
         "attribute.h": "c",
-        "autoconf.h": "c"
+        "autoconf.h": "c",
+        "alltypes.h": "c"
     }
 }

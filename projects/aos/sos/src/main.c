@@ -537,9 +537,38 @@ void nfs_call_loop(seL4_CPtr ep, bool *condition_on_wait) {
 
 void start_first_process_then_loop(void *arg) {
     struct syscall_loop_args *args = arg;
-    start_first_process(APP_NAME, args->ep, worker_threads[0]->assigned_pid);
+    /* Start user process */
+    printf("Start first process\n");
+    bool success = start_first_process(APP_NAME, args->ep, worker_threads[0]->assigned_pid);
+    ZF_LOGF_IF(!success, "Failed to start first process");
     syscall_loop(arg);
 }
+
+sos_thread_t* create_worker_thread(size_t thread_id, thread_main_f *function, bool start_execution) {
+    /* Create a notification object */
+    seL4_CPtr thread_ntfn;
+    ut_t *ut = create_cap(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
+    
+    /* Start the worker thread */
+    struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
+
+    sos_thread_t* thread = thread_create(thread_id, function, worker_sys_loop_args, thread_id + 1, false, seL4_MinPrio, thread_ntfn, true);
+    ZF_LOGF_IF(!thread, "Failed to create worker thread");
+
+    /* worker thread's IPC EP is created within the `thread_create` function */
+    worker_sys_loop_args->ep = thread->ipc_ep;
+    worker_sys_loop_args->thread_index = thread_id;
+
+    /* start execution */
+    if (start_execution) {
+        thread_resume(thread);
+    }
+
+    /* store the worker thread */
+    worker_threads[thread_id] = thread;
+    return thread;
+}
+
 
 NORETURN void *main_continued(UNUSED void *arg)
 {
@@ -595,8 +624,7 @@ NORETURN void *main_continued(UNUSED void *arg)
 
 #ifdef CONFIG_SOS_GDB_ENABLED
     /* Initialize the debugger */
-    // TODO: fix this later, is 17 good????????
-    seL4_Error debug_err = debugger_init(17, &cspace, seL4_CapIRQControl, gdb_recv_ep);
+    seL4_Error debug_err = debugger_init(DEBUGGER_THREAD_ID, &cspace, seL4_CapIRQControl, gdb_recv_ep);
     ZF_LOGF_IF(debug_err, "Failed to initialize debugger %d", debug_err);
     char secret_string[15] = "Welcome to AOS!";
 #endif /* CONFIG_SOS_GDB_ENABLED */
@@ -604,9 +632,8 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* Initialises the timer */
     printf("Timer init\n");
     start_timer(timer_vaddr);
-    /* You will need to register an IRQ handler for the timer here.
-     * See "irq.h". */
 
+    /* Register an IRQ handler for the timer here. See "irq.h". */
     seL4_Word irq_number = meson_timeout_irq(MESON_TIMER_A);
     bool edge_triggered = true;
     seL4_IRQHandler irq_handler = 0;
@@ -615,79 +642,45 @@ NORETURN void *main_continued(UNUSED void *arg)
     ZF_LOGF_IF(init_irq_err != 0, "Failed to initialise IRQ");
     seL4_IRQHandler_Ack(irq_handler);
 
-    /*  Create a thread pool */
-    for (size_t id = 1; id < MAX_WORKER_THREADS; ++id) {
-        /* Create a notification object */
-        seL4_CPtr thread_ntfn;
-        ut_t *ut = create_cap(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
-        
-        /* Start the worker thread */
-        struct syscall_loop_args *worker_sys_loop_args = malloc(sizeof(struct syscall_loop_args));
-        ZF_LOGF_IF(!worker_sys_loop_args, "Failed to allocate memory to worker_sys_loop_args");
-
-        sos_thread_t* thread = thread_create(id, syscall_loop, worker_sys_loop_args, id + 1, false, seL4_MinPrio, thread_ntfn, true);
-        ZF_LOGF_IF(!thread, "Failed to create worker thread");
-
-        // worker thread IPC EP is created within 
-        worker_sys_loop_args->ep = thread->ipc_ep;
-        worker_sys_loop_args->thread_index = id;
-        thread_resume(thread);
-
-        worker_threads[id] = thread;
-    }
-
-    /* Create a worker thread for handling interrupts */
-    struct syscall_loop_args *interrupts_handler_args = malloc(sizeof(struct syscall_loop_args));
-    ZF_LOGF_IF(!interrupts_handler_args, "Failed to allocate memory to interrupts_handler_args");
-    interrupts_handler_args->ep = ipc_ep;
-    
-    // unbinds ntfn from init thread TCB, because we're going to bind ntfn to the interrupts handler thread
-    seL4_Error err = seL4_TCB_UnbindNotification(seL4_CapInitThreadTCB);
-    ZF_LOGF_IF(err != seL4_NoError, "Failed to unbind notification from init thread TCB, seL4_Error=%d", err);
-    
-    sos_thread_t* interrupt_thread = thread_create(MAX_WORKER_THREADS, syscall_loop, interrupts_handler_args, MAX_WORKER_THREADS + 1, true, seL4_MaxPrio, ntfn, true);
-    ZF_LOGF_IF(!interrupt_thread, "Failed to create interrupt thread");
-
-    /* Initialize a pool of user processes */
+    /* Create a pool of user processes */
     for (size_t i = 0; i < MAX_NUM_PROCESSES; i++) {
         user_processes[i] = malloc(sizeof(user_process_t));
         ZF_LOGF_IF(!user_processes[i], "Failed to malloc user_process_t for index %zu", i);
     }
 
-    /* Start user process */
-    printf("Start first process\n");
-    /*  Create a thread to load the first user process, then enter syscall loop */
-    seL4_CPtr thread_ntfn;
-    ut_t *ut = create_cap(&thread_ntfn, seL4_NotificationObject, seL4_NotificationBits);
+    /* Initialize free PIDs queue */
+    init_free_pids();
+
+    /*  Create a thread pool */
+    for (size_t id = 1; id < MAX_WORKER_THREADS; ++id) {
+        create_worker_thread(id, syscall_loop, true);
+    }
+
+    /* Create a worker thread for handling interrupts */
+    struct syscall_loop_args interrupts_handler_args = { .ep = ipc_ep, .thread_index = -1 };
     
-    struct syscall_loop_args *args = malloc(sizeof(struct syscall_loop_args));
-    ZF_LOGF_IF(!args, "Failed to allocate memory to syscall_loop_args");
-
-    // TODO: make 0 become a constant
-    sos_thread_t* thread = thread_create(0, start_first_process_then_loop, args, 1, false, seL4_MinPrio, thread_ntfn, true);
-    ZF_LOGF_IF(!thread, "Failed to create worker thread");
+    // unbinds ntfn from init thread TCB, because we're going to bind ntfn to the interrupts handler thread
+    seL4_Error err = seL4_TCB_UnbindNotification(seL4_CapInitThreadTCB);
+    ZF_LOGF_IF(err != seL4_NoError, "Failed to unbind notification from init thread TCB, seL4_Error=%d", err);
     
-    worker_threads[0] = thread;
+    sos_thread_t* interrupt_thread = thread_create(SOS_INTERRUPT_THREAD_ID, syscall_loop, &interrupts_handler_args, SOS_INTERRUPT_THREAD_ID + 1, true, seL4_MaxPrio, ntfn, true);
+    ZF_LOGF_IF(!interrupt_thread, "Failed to create interrupt thread");
 
-    args->ep = thread->ipc_ep;
-    args->thread_index = 0;
-
-    // TODO: fix this to use the pid queue
-    uint32_t available_pid = 0;
-    worker_threads[0]->assigned_pid = available_pid;
-
-    thread_resume(thread);
+    /* Create the bootstrap thread. It will load the first user process, then transition into the syscall loop. */
+    sos_thread_t *boostrap_thread = create_worker_thread(SOS_BOOTSTRAP_THREAD_ID, start_first_process_then_loop, false);
     
-    // bool success = start_first_process(APP_NAME, worker_threads[0]->ipc_ep, available_pid);
+    /* Assigned PID to the boostrap thread */
+    sos_pid_t available_pid = get_available_pid();
+    boostrap_thread->assigned_pid = available_pid;
 
-    // ZF_LOGF_IF(!success, "Failed to start first process");
-    struct syscall_loop_args *main_thread_args = malloc(sizeof(struct syscall_loop_args));
-    ZF_LOGF_IF(!main_thread_args, "Failed to allocate memory to main_thread_args");
-
+    /* Resume the bootstrap thread so it can begin loading the initial user process. */
+    thread_resume(boostrap_thread);
+    
+    /* Enter the syscall loop on the main thread to keep SOS running */
     seL4_CPtr main_thread_ipc_ep;
     create_cap(&main_thread_ipc_ep, seL4_EndpointObject, seL4_EndpointBits);
-    main_thread_args->ep = ipc_ep;
-    syscall_loop(main_thread_args);
+    struct syscall_loop_args main_thread_args = { .ep = main_thread_ipc_ep, .thread_index = -1 };
+    syscall_loop(&main_thread_args);
 }
 /*
  * Main entry point - called by crt.

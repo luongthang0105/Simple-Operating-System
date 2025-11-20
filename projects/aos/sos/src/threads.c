@@ -37,7 +37,6 @@ static seL4_CPtr sched_ctrl_end;
 static seL4_CPtr ipc_ep;
 static seL4_CPtr fault_ep;
 
-
 void init_threads(seL4_CPtr _ipc_ep, seL4_CPtr _fault_ep, seL4_CPtr sched_ctrl_start_, seL4_CPtr sched_ctrl_end_)
 {
     ipc_ep = _ipc_ep;

@@ -6,7 +6,7 @@
 
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
-typedef int pid_t;
+typedef uint32_t sos_pid_t;
 struct user_process
 {
     ut_t *tcb_ut;
@@ -49,17 +49,17 @@ extern user_process_t *user_processes[MAX_NUM_PROCESSES];
 */
 typedef struct
 {
-    pid_t pid;
+    sos_pid_t pid;
     uint64_t freed_timestamp;
 } pid_free_record_t;
 
 /*  A queue that contains the currently free process id
     It should always have at least one item in it, until we reach MAX_NUM_PROCESSES processes
-    The initial item in the queue is process id 0.
+    The initial items in the queue are process ids from 0 to MAX_NUM_PROCESSES.
 */
 typedef struct pid_queue
 {
-    pid_free_record_t *arr[MAX_NUM_PROCESSES];
+    pid_free_record_t arr[MAX_NUM_PROCESSES + 1];
     size_t i;
     size_t j;
 } pid_queue_t;
@@ -80,3 +80,5 @@ int copy_from_user(void *to, const void *from, size_t nbyte);
 // TODO: add comment
 user_process_t *get_current_user_process_process();
 user_process_t *get_current_user_process_by_thread(uint64_t thread_id);
+void init_free_pids();
+sos_pid_t get_available_pid();
