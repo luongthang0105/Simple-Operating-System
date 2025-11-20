@@ -62,6 +62,7 @@
         "errno.h": "c",
         "attribute.h": "c",
         "autoconf.h": "c",
-        "alltypes.h": "c"
+        "alltypes.h": "c",
+        "ut.h": "c",
     }
 }

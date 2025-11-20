@@ -84,6 +84,7 @@ add_executable(
     src/syscall_handler/sys_timestamp.c
     src/fault_handler/fault_handler.c
     src/fault_handler/vm_fault.c
+    src/mutex.c
 )
 target_include_directories(sos PRIVATE "include")
 target_link_libraries(
