@@ -29,7 +29,7 @@
 #define SOS_THREAD_PRIORITY     (100)
 
 __thread sos_thread_t *current_thread = NULL;
-sos_thread_t *worker_threads[MAX_WORKER_THREADS];
+sos_thread_t *worker_threads[MAX_WORKER_THREADS] = { NULL };
 
 static seL4_CPtr sched_ctrl_start;
 static seL4_CPtr sched_ctrl_end;
