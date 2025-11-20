@@ -1,15 +1,13 @@
 #include "sys_stat.h"
 #include "../threads.h"
 #include <fcntl.h>
-
-extern sos_thread_t *worker_threads[MAX_WORKER_THREADS];
+#include "../user_process.h"
 
 void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *private_data)
 {
     sos_stat_cb_args_t *ret_private_data = (sos_stat_cb_args_t *)private_data;
 
     int thread_index = ret_private_data->thread_index;
-    uintptr_t stat_buf_vaddr = ret_private_data->stat_buf_vaddr;
 
     if (err < 0)
     {
@@ -20,28 +18,28 @@ void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *priva
     }
 
     struct nfs_stat_64 *nfs_stat = (struct nfs_stat_64 *)data;
-    sos_stat_t *sos_stat = malloc(sizeof(sos_stat_t));
-    sos_stat->st_type = ret_private_data->st_type;
-
-    sos_stat->st_fmode = 0;
+    sos_stat_t sos_stat = {
+        .st_atime   = nfs_stat->nfs_atime, 
+        .st_ctime   = nfs_stat->nfs_ctime,
+        .st_size    = nfs_stat->nfs_size,
+        .st_type    = ret_private_data->st_type,
+        .st_fmode   = 0
+    };
+    
     if (nfs_stat->nfs_mode & S_IRUSR)
     {
-        sos_stat->st_fmode |= FM_READ;
+        sos_stat.st_fmode |= FM_READ;
     }
     if (nfs_stat->nfs_mode & S_IWUSR)
     {
-        sos_stat->st_fmode |= FM_WRITE;
+        sos_stat.st_fmode |= FM_WRITE;
     }
     if (nfs_stat->nfs_mode & S_IXUSR)
     {
-        sos_stat->st_fmode |= FM_EXEC;
+        sos_stat.st_fmode |= FM_EXEC;
     }
 
-    sos_stat->st_size = nfs_stat->nfs_size;
-    sos_stat->st_ctime = nfs_stat->nfs_ctime;
-    sos_stat->st_atime = nfs_stat->nfs_atime;
-
-    ret_private_data->status = copy_to_user((void *)stat_buf_vaddr, sos_stat, sizeof(sos_stat_t));
+    ret_private_data->sos_stat = sos_stat;
     seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 
@@ -78,26 +76,30 @@ void handle_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index)
     }
 
     struct nfs_context *nfs_context = get_nfs_context();
-    sos_stat_cb_args_t *private_data = malloc(sizeof(sos_stat_cb_args_t));
-    private_data->thread_index = thread_index;
-    private_data->stat_buf_vaddr = stat_buf_vaddr;
-    private_data->st_type = strcmp(temp_path_buf, "console") == 0 ? ST_SPECIAL : ST_FILE;
-    private_data->status = 0;
+    sos_stat_cb_args_t private_data = {
+        .thread_index = thread_index,
+        .st_type = strcmp(temp_path_buf, "console") == 0 ? ST_SPECIAL : ST_FILE,
+        .status = 0
+    };
 
-    int err = nfs_stat64_async(nfs_context, temp_path_buf, sos_stat_callback, private_data);
+    int err = nfs_stat64_async(nfs_context, temp_path_buf, sos_stat_callback, &private_data);
     if (err < 0)
     {
         ZF_LOGE("An error occured when trying to queue the command nfs_stat64_async. The callback will not be invoked.");
         free(temp_path_buf);
-        free(private_data);
         seL4_SetMR(0, -1);
         return;
     }
 
     seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    if (private_data.status == -1) {
+        free(temp_path_buf);
+        seL4_SetMR(0, -1);
+        return;
+    }
 
-    free(private_data);
+    status = copy_to_user((void *)stat_buf_vaddr, (void *)(&private_data.sos_stat), sizeof(sos_stat_t));
+
     free(temp_path_buf);
-
-    seL4_SetMR(0, private_data->status);
+    seL4_SetMR(0, status);
 }
