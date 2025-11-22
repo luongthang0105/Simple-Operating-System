@@ -3,6 +3,7 @@
 #include "vm_region.h"
 #include <nfsc/libnfs.h>
 #include <sossharedapi/vfs.h>
+#include "mutex.h"
 
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
@@ -65,6 +66,7 @@ typedef struct pid_queue
 } pid_queue_t;
 
 extern pid_queue_t free_pids;
+sync_mutex_t *free_pids_mutex;
 
 /** Copy data from SOS to user app.
  *  @returns 0 if `nbyte` was successfully copied, -1 otherwise.

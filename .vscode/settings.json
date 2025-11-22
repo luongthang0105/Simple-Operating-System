@@ -64,5 +64,6 @@
         "autoconf.h": "c",
         "alltypes.h": "c",
         "ut.h": "c",
+        "mutex.h": "c"
     }
 }

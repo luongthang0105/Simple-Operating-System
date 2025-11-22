@@ -183,7 +183,6 @@ static inline int sync_bin_sem_destroy(sync_bin_sem_t *sem)
     return 0;
 }
 
-typedef sync_bin_sem_t sync_mutex_t;
 
 /* Initialise an unmanaged mutex with a notification object
  * @param sem           A mutex object to be initialised.

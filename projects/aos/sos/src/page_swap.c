@@ -6,13 +6,6 @@
 #include "mapping.h"
 #include "cap_utils.h"
 #include "backtrace.h"
-#ifdef CONFIG_SOS_FRAME_LIMIT
-#define PAGES_QUEUE_MAX_SIZE    ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : CONFIG_SOS_FRAME_LIMIT)
-#define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 150))
-#else
-#define PAGES_QUEUE_MAX_SIZE (1 << 19)
-#define OFFSET_QUEUE_MAX_SIZE = (1 << 19);
-#endif
 
 extern cspace_t cspace;
 struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
@@ -66,28 +59,7 @@ static void write_to_pagefile(page_metadata_t *page_metadata);
  * @return First element of the `free_pagefile_offsets` queue, implying an available offset in the pagefile.
  */
 static size_t free_pagefile_offsets_pop();
-
-typedef struct pages_queue
-{
-    page_metadata_t *arr[PAGES_QUEUE_MAX_SIZE];
-    size_t i;
-    size_t j;
-} pages_queue_t;
-
-/*  A queue that contains the currently free space in the pagefile (determined by the offset)
-It should always have at least one item in it, which is the offset to the end of the file.
-The initial item in the queue is offset 0.
-*/
-typedef struct free_pagefile_offsets {
-    size_t arr[OFFSET_QUEUE_MAX_SIZE];
-    size_t i;
-    size_t j;
-    size_t eof_offset;
-} offset_queue_t;
-
-pages_queue_t in_memory_pages;
-offset_queue_t free_pagefile_offsets;
-
+static size_t free_pagefile_offsets_add();
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
 SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
 
@@ -253,6 +225,14 @@ seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vad
 }
 
 void init_page_swap() {
+    // initialize the mutexes
+    in_memory_pages_mutex = malloc(sizeof(sync_mutex_t));
+    free_pagefile_offsets_mutex = malloc(sizeof(sync_mutex_t));
+
+    sync_mutex_new(in_memory_pages_mutex);
+    sync_mutex_new(free_pagefile_offsets_mutex);
+
+    // open the pagefile
     nfs = get_nfs_context();
 
     sglib_offset_queue_t_add(&free_pagefile_offsets, 0);
