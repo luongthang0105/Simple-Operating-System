@@ -59,7 +59,7 @@ static void write_to_pagefile(page_metadata_t *page_metadata);
  * @return First element of the `free_pagefile_offsets` queue, implying an available offset in the pagefile.
  */
 static size_t free_pagefile_offsets_pop();
-static size_t free_pagefile_offsets_add();
+static void free_pagefile_offsets_add(size_t new_offset);
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
 SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
 
@@ -74,7 +74,7 @@ int swap_to_mem(page_metadata_t *page) {
     read_from_pagefile(data, page);
 
     /* return pagefile offset to queue */
-    sglib_offset_queue_t_add(&free_pagefile_offsets, page->pagefile_offset);
+    free_pagefile_offsets_add(page->pagefile_offset);
 
     /* allocate a slot to duplicate the frame cap so we can map it into the application */
     seL4_CPtr frame_cptr = cspace_alloc_slot(&cspace);
@@ -104,10 +104,23 @@ int swap_to_mem(page_metadata_t *page) {
 }
 
 void in_memory_pages_add(page_metadata_t *page) {
+    sync_mutex_lock(in_memory_pages_mutex);
+
     sglib_pages_queue_t_add(&in_memory_pages, page);
+    
+    sync_mutex_unlock(in_memory_pages_mutex);
+}
+
+page_metadata_t *in_memory_pages_pop() {
+    sync_mutex_lock(in_memory_pages_mutex);
+
+    sglib_pages_queue_t_delete_first(&in_memory_pages);
+    
+    sync_mutex_unlock(in_memory_pages_mutex);
 }
 
 static size_t free_pagefile_offsets_pop() {
+    sync_mutex_lock(&free_pagefile_offsets_mutex);
     
     if (!sglib_offset_queue_t_is_empty(&free_pagefile_offsets)) {
         size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
@@ -119,8 +132,17 @@ static size_t free_pagefile_offsets_pop() {
         }
         return available_offset;
     }
+
     ZF_LOGE("Free pagefile offset queue is empty!");
+    sync_mutex_unlock(&free_pagefile_offsets_mutex);
+
     return 0;
+}
+
+static void free_pagefile_offsets_add(size_t new_offset) {
+    sync_mutex_lock(&free_pagefile_offsets_mutex);
+    sglib_offset_queue_t_add(&free_pagefile_offsets, new_offset);
+    sync_mutex_unlock(&free_pagefile_offsets_mutex);
 }
 
 static void write_to_pagefile(page_metadata_t *page_metadata) {
@@ -193,7 +215,7 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
 void evict_page() {
     while (!sglib_pages_queue_t_is_empty(&in_memory_pages)) {
         page_metadata_t *page = sglib_pages_queue_t_first_element(&in_memory_pages);
-        sglib_pages_queue_t_delete_first(&in_memory_pages);
+        in_memory_pages_pop();
 
         if (page->reference_bit == 1) { /* give it a second chance */
             page->reference_bit = 0;

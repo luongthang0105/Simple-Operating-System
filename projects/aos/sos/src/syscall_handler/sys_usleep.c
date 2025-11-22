@@ -1,5 +1,6 @@
 #include "sys_usleep.h"
 #include "../threads.h"
+#include <clock/clock.h>
 
 /* Callback for timer registered by usleep system call */
 void timeout_callback(uint32_t id, void *data)
