@@ -32,6 +32,7 @@ add_subdirectory(libnetworkconsole)
 add_subdirectory(libsosapi)
 # add any additional libs here
 add_subdirectory(libsossharedapi)
+add_subdirectory(libsync)
 
 # enable our networking libs
 set(LibPicotcp ON CACHE BOOL "" FORCE)
