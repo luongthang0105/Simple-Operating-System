@@ -20,7 +20,7 @@
 #include <sos/gen_config.h>
 #include "page_swap.h"
 #include "backtrace.h"
-
+#include "mutex.h"
 /* Debugging macro to get the human-readable name of a particular list. */
 #define LIST_NAME(list) LIST_ID_NAME(list->list_id)
 
@@ -80,6 +80,7 @@ static struct {
     .allocated = { .list_id = ALLOCATED_LIST },
 };
 
+sync_mutex_t *frame_table_mutex;
 /* Management of frame nodes */
 static frame_ref_t ref_from_frame(frame_t *frame);
 
@@ -109,6 +110,9 @@ void frame_table_init(cspace_t *cspace, seL4_CPtr vspace)
 {
     frame_table.cspace = cspace;
     frame_table.vspace = vspace;
+    // initialise the mutex
+    frame_table_mutex = malloc(sizeof(sync_mutex_t));
+    sync_mutex_new(frame_table_mutex);
 }
 
 cspace_t *frame_table_cspace(void)
@@ -117,7 +121,9 @@ cspace_t *frame_table_cspace(void)
 }
 
 frame_ref_t alloc_frame(void)
-{
+{   
+    sync_mutex_lock(frame_table_mutex);
+
     frame_t *frame = pop_front(&frame_table.free);
 
     if (frame == NULL) {
@@ -134,17 +140,24 @@ frame_ref_t alloc_frame(void)
     }
     unsigned char *data = frame_data(ref_from_frame(frame));
     memset(data, 0, PAGE_SIZE_4K);
+    
+    sync_mutex_unlock(frame_table_mutex);
+
     return ref_from_frame(frame);
 }
 
 void free_frame(frame_ref_t frame_ref)
-{
+{   
+    sync_mutex_lock(frame_table_mutex);
+
     if (frame_ref != NULL_FRAME) {
         frame_t *frame = frame_from_ref(frame_ref);
 
         remove_frame(&frame_table.allocated, frame);
         push_front(&frame_table.free, frame);
     }
+
+    sync_mutex_unlock(frame_table_mutex);
 }
 
 seL4_ARM_Page frame_page(frame_ref_t frame_ref)
