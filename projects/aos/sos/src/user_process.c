@@ -13,12 +13,19 @@ void init_free_pids() {
         pid_free_record_t record = { .pid = pid, .freed_timestamp = 0 };
         sglib_pid_queue_t_add(&free_pids, record);
     }
+    // initialise the mutex
+    free_pids_mutex = malloc(sizeof(sync_mutex_t));
+    sync_mutex_new(free_pids_mutex);
 }
 
 sos_pid_t get_available_pid() {
     // TODO: check if record has pass a certain amount of time to avoid race condition
+    sync_mutex_lock(free_pids_mutex);
+
     pid_free_record_t record = sglib_pid_queue_t_first_element(&free_pids);
     sglib_pid_queue_t_delete_first(&free_pids);
+    
+    sync_mutex_unlock(free_pids_mutex);
     return record.pid;
 }
 

@@ -21,6 +21,7 @@
                 "${workspaceFolder}/projects/libelf/include",
                 "${workspaceFolder}/projects/libcpio/include",
                 "${workspaceFolder}/projects/aos/libnetworkconsole/include",
+                "${workspaceFolder}/projects/aos/libsync/include",
                 "${workspaceFolder}/projects/aos/apps/tests/include",
                 "${workspaceFolder}/build/projects/libpicotcp/picotcp_external/picotcp/build/include",
                 "${workspaceFolder}/build/projects/libpicotcp/gen_config",

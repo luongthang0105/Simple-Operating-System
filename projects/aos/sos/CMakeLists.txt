@@ -72,6 +72,7 @@ add_executable(
     src/page_swap.c
     src/cap_utils.c
     src/user_process.c
+    src/mutex.c
     src/syscall_handler/syscall_handler.c
     src/syscall_handler/sys_open.c
     src/syscall_handler/sys_stat.c
