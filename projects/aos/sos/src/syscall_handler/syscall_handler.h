@@ -14,7 +14,4 @@
  * Deals with a syscall and sets the message registers before returning the
  * message info to be passed through to seL4_ReplyRecv()
  */
-seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply, int thread_index);
-
-
-
+seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply);

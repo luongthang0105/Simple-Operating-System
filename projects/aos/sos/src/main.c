@@ -151,7 +151,7 @@ NORETURN void syscall_loop(void* arg)
         } else if (label == seL4_Fault_NullFault) {
             /* It's not a fault or an interrupt, it must be an IPC
              * message from console_test! */
-            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply, thread_index);
+            reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
         } else {
             /* Handle the fault */
             reply_msg = handle_fault(message, &have_reply, worker_threads[thread_index]->ntfn, APP_NAME);

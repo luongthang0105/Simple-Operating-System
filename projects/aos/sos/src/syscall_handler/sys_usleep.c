@@ -9,13 +9,12 @@ void timeout_callback(uint32_t id, void *data)
     seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 
-void handle_sos_usleep(seL4_MessageInfo_t *reply_msg, int thread_index)
+int handle_sos_usleep()
 {
     ZF_LOGV("syscall: usleep!\n");
     int msec = seL4_GetMR(1);
 
-    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
-
-    register_timer(msec, timeout_callback, &thread_index);
-    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    register_timer(msec, timeout_callback, &current_thread->thread_id);
+    seL4_Wait(current_thread->ntfn, NULL);
+    return 0;
 }

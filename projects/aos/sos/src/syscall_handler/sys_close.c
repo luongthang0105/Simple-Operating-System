@@ -20,10 +20,9 @@ void nfs_close_cb(int status, struct nfs_context *nfs, void *data, void *private
     return;
 }
 
-void handle_sos_close(seL4_MessageInfo_t *reply_msg, int thread_index)
+int handle_sos_close()
 {
     ZF_LOGV("syscall: close!\n");
-    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     user_process_t *user_process = get_current_user_process();
 
@@ -32,46 +31,42 @@ void handle_sos_close(seL4_MessageInfo_t *reply_msg, int thread_index)
     if (fd < 0 || fd >= PROCESS_MAX_FILES)
     {
         ZF_LOGE("Invalid file descriptor");
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     if (user_process->vfs->fd_table[fd].is_opened == false)
     {
         ZF_LOGE("File is not opened");
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     if (fd == CONSOLE_FD)
     {
         user_process->vfs->fd_table[fd].mode = O_WRONLY;
         seL4_SetMR(0, 0);
-        return;
+        return -1;
     }
 
     struct nfs_context *nfs_context = get_nfs_context();
-    nfs_close_cb_args_t args = {.thread_index = thread_index};
+    nfs_close_cb_args_t args = {.thread_index = current_thread->thread_id};
     int ret = nfs_close_async(nfs_context, user_process->vfs->fd_table[fd].fh, nfs_close_cb, (void *)&args);
     if (ret < 0)
     {
         ZF_LOGE("Failed to queue nfs_close_async");
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
-    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    seL4_Wait(current_thread->ntfn, NULL);
 
     if (args.status < 0)
     {
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     // Mark fd slot as free. Don't need to free (struct nfsfh*) because it has been freed in nfs_close_async.
     user_process->vfs->fd_table[fd].is_opened = false;
     user_process->vfs->fd_table[fd].mode = -1;
     free(user_process->vfs->fd_table[fd].path);
-    seL4_SetMR(0, 0);
-    return;
+    
+    return 0;
 }

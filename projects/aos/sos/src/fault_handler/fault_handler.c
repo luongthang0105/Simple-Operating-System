@@ -28,11 +28,9 @@ seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_C
             break;
     }
 
-    if (ret == 0) {
-        *have_reply = true;
+    *have_reply = (ret == 0);
+    if (*have_reply) {
         seL4_SetMR(0, 0);
-    } else {
-        *have_reply = false;
     }
     
     return reply_msg;

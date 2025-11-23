@@ -7,13 +7,13 @@
 #include <sel4/sel4.h>
 
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data)
-{   
+{
 
     sos_open_cb_args_t *ret_private_data = (sos_open_cb_args_t *)private_data;
-    int thread_index        = ret_private_data->thread_index;
-    int fd                  = ret_private_data->fd;
+    int thread_index = ret_private_data->thread_index;
+    int fd = ret_private_data->fd;
     user_process_t *user_process = get_current_user_process_by_thread(thread_index);
-    
+
     if (err < 0)
     {
         ZF_LOGE("error: %d, error msg: %s\n", err, (char *)data);
@@ -50,10 +50,9 @@ int handle_sos_open_nwcs(fmode_t mode)
     return CONSOLE_FD;
 }
 
-void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
+int handle_sos_open()
 {
     ZF_LOGV("syscall: open!\n");
-    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     user_process_t *user_process = get_current_user_process();
 
@@ -64,16 +63,14 @@ void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
     unsigned char *path_data = find_frame_data(path_vaddr, user_process->page_global_directory);
     if (!path_data)
     {
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     char *temp_path_buf = malloc(path_len + 1);
     if (temp_path_buf == NULL)
     {
         ZF_LOGE("Failed to allocate memory for temp_path_buf");
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
     temp_path_buf[path_len] = '\0';
 
@@ -81,15 +78,13 @@ void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
     if (status == -1)
     {
         free(temp_path_buf);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     if (strcmp(temp_path_buf, "console") == 0)
     {
         free(temp_path_buf);
-        seL4_SetMR(0, handle_sos_open_nwcs(mode));
-        return;
+        return handle_sos_open_nwcs(mode);
     }
 
     int fd = find_next_fd(user_process->vfs);
@@ -98,8 +93,7 @@ void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
     {
         ZF_LOGE("Unable to allocate a new file descriptor since the number of open files exceeded %d\n", PROCESS_MAX_FILES);
         free(temp_path_buf);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     struct nfs_context *nfs_context = get_nfs_context();
@@ -107,12 +101,11 @@ void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
     if (private_data == NULL)
     {
         ZF_LOGE("Failed to allocate memory for nfs_open callback private_data");
-        seL4_SetMR(0, -1);
         free(temp_path_buf);
-        return;
+        return -1;
     }
 
-    private_data->thread_index = thread_index;
+    private_data->thread_index = current_thread->thread_id;
     private_data->fd = fd;
     private_data->err = 0;
 
@@ -123,11 +116,10 @@ void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
         ZF_LOGE("An error occured when trying to queue the command nfs_open_async. The callback will not be invoked.");
         free(temp_path_buf);
         free(private_data);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
-    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    seL4_Wait(current_thread->ntfn, NULL);
 
     err = private_data->err;
     free(private_data);
@@ -135,13 +127,12 @@ void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index)
     if (err)
     {
         free(temp_path_buf);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     user_process->vfs->fd_table[fd].is_opened = true;
     user_process->vfs->fd_table[fd].mode = mode;
     user_process->vfs->fd_table[fd].path = temp_path_buf;
 
-    seL4_SetMR(0, fd);
+    return fd;
 }

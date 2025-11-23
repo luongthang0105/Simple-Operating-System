@@ -2,9 +2,9 @@
 #include <sossharedapi/syscalls.h>
 #include <utils/util.h>
 
-seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply, int thread_index)
+seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, bool *have_reply)
 {
-    seL4_MessageInfo_t reply_msg;
+    seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     /* get the first word of the message, which in the SOS protocol is the number
      * of the SOS "syscall". */
@@ -13,36 +13,38 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     /* Set the reply flag */
     *have_reply = true;
 
+    int64_t ret = -1;
+
     /* Process system call */
     /* Ideally, put all of these into syscall_handlers.c (in the future :P)*/
     switch (syscall_number)
     {
     case SYSCALL_SOS_OPEN:
-        handle_sos_open(&reply_msg, thread_index);
+        ret = handle_sos_open();
         break;
     case SYSCALL_SOS_CLOSE:
-        handle_sos_close(&reply_msg, thread_index);
+        ret = handle_sos_close();
         break;
     case SYSCALL_SOS_WRITE:
-        handle_sos_write(&reply_msg, thread_index);
+        ret = handle_sos_write();
         break;
     case SYSCALL_SOS_READ:
-        handle_sos_read(&reply_msg, thread_index);
+        ret = handle_sos_read();
         break;
     case SYSCALL_SOS_TIMESTAMP:
-        handle_sos_timestamp(&reply_msg);
+        ret = handle_sos_timestamp();
         break;
     case SYSCALL_SOS_USLEEP:
-        handle_sos_usleep(&reply_msg, thread_index);
+        ret = handle_sos_usleep();
         break;
     case SYSCALL_SOS_BRK:
-        handle_sos_brk(&reply_msg);
+        ret = handle_sos_brk();
         break;
     case SYSCALL_SOS_GETDIRENT:
-        handle_sos_getdirent(&reply_msg, thread_index);
+        ret = handle_sos_getdirent();
         break;
     case SYSCALL_SOS_STAT:
-        handle_sos_stat(&reply_msg, thread_index);
+        ret = handle_sos_stat();
         break;
     default:
         reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
@@ -51,5 +53,6 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
         *have_reply = false;
     }
 
+    seL4_SetMR(0, ret);
     return reply_msg;
 }

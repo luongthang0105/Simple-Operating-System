@@ -3,4 +3,13 @@
 #include <sel4/shared_types_gen.h>
 #include <aos/sel4_zf_logif.h>
 
-void handle_sos_usleep(seL4_MessageInfo_t *reply_msg, int thread_index);
+/**
+ * @brief Handles the sos_usleep syscall for a user process.
+ *
+ * Registers a timer to block the current thread for the specified number
+ * of milliseconds, then waits until the timer expires.
+ *
+ * @return 0 on completion.
+ */
+
+int handle_sos_usleep();

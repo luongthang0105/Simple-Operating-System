@@ -24,10 +24,9 @@ void nfs_opendir_cb(int status, struct nfs_context *nfs, void *data, void *priva
     return;
 }
 
-void handle_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index)
+int handle_sos_getdirent()
 {
     ZF_LOGV("syscall: getdirent!\n");
-    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     user_process_t *user_process = get_current_user_process();
 
@@ -38,16 +37,15 @@ void handle_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index)
     struct nfs_context *nfs_context = get_nfs_context();
 
     // calls opendir to get struct nfsdir*
-    nfs_opendir_cb_args_t args = {.thread_index = thread_index};
+    nfs_opendir_cb_args_t args = {.thread_index = current_thread->thread_id};
     int ret = nfs_opendir_async(nfs_context, "./", nfs_opendir_cb, (void *)&args);
     if (ret < 0)
     {
         ZF_LOGE("Failed to queue nfs_opendir_async");
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
-    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    seL4_Wait(current_thread->ntfn, NULL);
 
     // calls nfs_readdir to read the expected entry (struct dirent*)
     struct nfsdirent *nfsdirent;
@@ -58,13 +56,11 @@ void handle_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index)
         {
             if (i == pos)
             { // pos is right after the last entry
-                seL4_SetMR(0, 0);
-                return;
+                return 0;
             }
             else
             { // otherwise, treat this as non-existent entry
-                seL4_SetMR(0, -1);
-                return;
+                return -1;
             }
         }
     }
@@ -74,11 +70,10 @@ void handle_sos_getdirent(seL4_MessageInfo_t *reply_msg, int thread_index)
 
     if (status == 0)
     {
-        seL4_SetMR(0, bytes_to_copy);
+        return bytes_to_copy;
     }
     else
     {
-        seL4_SetMR(0, -1);
+        return -1;
     }
-    return;
 }

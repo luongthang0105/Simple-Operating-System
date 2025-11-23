@@ -10,4 +10,14 @@ typedef struct sos_open_cb_args
     int err;
 } sos_open_cb_args_t;
 
-void handle_sos_open(seL4_MessageInfo_t *reply_msg, int thread_index);
+/**
+ * @brief Handles the sos_open syscall for a user process.
+ *
+ * Retrieves the file path and mode from user memory, validates and copies the
+ * path into kernel space, and then performs an asynchronous NFS open request.
+ * The calling thread blocks until the NFS operation completes. On success, a
+ * new file descriptor is allocated and recorded in the process’s VFS table.
+ *
+ * @return A file descriptor on success, or -1 on failure.
+ */
+int handle_sos_open();

@@ -43,10 +43,9 @@ void sos_stat_callback(int err, struct nfs_context *nfs, void *data, void *priva
     seL4_Signal(worker_threads[thread_index]->ntfn);
 }
 
-void handle_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index)
+int handle_sos_stat()
 {
     ZF_LOGV("syscall: stat!\n");
-    *reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
 
     uintptr_t path_vaddr = seL4_GetMR(1);
     int path_len = seL4_GetMR(2) + 1; // includes terminator
@@ -56,16 +55,14 @@ void handle_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index)
     if (temp_path_buf == NULL)
     {
         ZF_LOGE("Failed to allocate memory for temp_path_buf");
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     int status = copy_from_user((void *)temp_path_buf, (void *)path_vaddr, path_len);
     if (status == -1)
     {
         free(temp_path_buf);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     if (strcmp(temp_path_buf, "..") == 0)
@@ -77,7 +74,7 @@ void handle_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index)
 
     struct nfs_context *nfs_context = get_nfs_context();
     sos_stat_cb_args_t private_data = {
-        .thread_index = thread_index,
+        .thread_index = current_thread->thread_id,
         .st_type = strcmp(temp_path_buf, "console") == 0 ? ST_SPECIAL : ST_FILE,
         .status = 0
     };
@@ -87,19 +84,17 @@ void handle_sos_stat(seL4_MessageInfo_t *reply_msg, int thread_index)
     {
         ZF_LOGE("An error occured when trying to queue the command nfs_stat64_async. The callback will not be invoked.");
         free(temp_path_buf);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
-    seL4_Wait(worker_threads[thread_index]->ntfn, NULL);
+    seL4_Wait(current_thread->ntfn, NULL);
     if (private_data.status == -1) {
         free(temp_path_buf);
-        seL4_SetMR(0, -1);
-        return;
+        return -1;
     }
 
     status = copy_to_user((void *)stat_buf_vaddr, (void *)(&private_data.sos_stat), sizeof(sos_stat_t));
 
     free(temp_path_buf);
-    seL4_SetMR(0, status);
+    return status;
 }

@@ -2,5 +2,13 @@
 #include <stdint.h>
 #include <sel4/shared_types_gen.h>
 #include <aos/sel4_zf_logif.h>
+#include <clock/clock.h>
 
-void handle_sos_timestamp(seL4_MessageInfo_t *reply_msg);
+/**
+ * @brief Handles the sos_timestamp syscall for a user process.
+ *
+ * Returns the current system timestamp.
+ *
+ * @return The current timestamp.
+ */
+timestamp_t handle_sos_timestamp();

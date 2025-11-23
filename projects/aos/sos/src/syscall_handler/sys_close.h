@@ -9,4 +9,14 @@ typedef struct
     int status;
 } nfs_close_cb_args_t;
 
-void handle_sos_close(seL4_MessageInfo_t *reply_msg, int thread_index);
+/**
+ * @brief Handles the sos_close syscall for a user process.
+ *
+ * Validates the provided file descriptor, handles the console special case,
+ * and issues an asynchronous NFS close request for regular files. The calling
+ * thread blocks until the close operation completes. On success, the file
+ * descriptor entry is cleared from the process’s VFS table.
+ *
+ * @return 0 on success, or -1 on failure.
+ */
+int handle_sos_close();
