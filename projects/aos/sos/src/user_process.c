@@ -28,6 +28,13 @@ int delete_user_process(int pid) {
     user_process_t *user_process = user_processes[pid];
     if (user_process == NULL) return -1;
 
+    /* First, suspend the thread so our subsequent destruction steps don't cause any fault/unexpected behaviour. */
+    seL4_Error err = seL4_TCB_Suspend(user_process->tcb);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Failed to suspend user process, seL4_Error=%d", err);
+        return -1;
+    }
+
     /* vfs */
     destroy_vfs(user_process->vfs);
     printf("delete vfs\n");
