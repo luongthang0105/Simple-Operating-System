@@ -13,6 +13,7 @@
 #include <aos/debug.h>
 #include "string.h"
 #include "../nfs_wrapper.h"
+#include <elf/elf64.h>
 
 /* The number of additional stack pages to provide to the initial
  * process */
@@ -225,13 +226,11 @@ static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
     mapped_stack[index] = val;
     return index - 1;
 }
-#include <elf/elf64.h>
 /** Extract the `__vsyscall` section offset, with respect to the elf base.
  * This function does not handle corrupted ELF file.
 */
 static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf_fh) {
     /* assume given elf is elf64 */
-    // Elf64_Ehdr elf_header = elf64_getHeader(elf_file);
 
     /** Section table is an array of headers. We can extract section name offset (w.r.t string table) from it. 
         Now load section table to memory to easily access it. 
@@ -255,10 +254,7 @@ static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf
     }
 
     size_t str_table_idx = elf_getSectionStringTableIndex(elf_file);
-
-    /* string table offset, relative to elf base */
-    // size_t str_table_offset1 = (uintptr_t)elf_getSection(elf_file, str_table_idx) - (uintptr_t)elf_file->elfFile;
-    size_t str_table_offset = section_headers[str_table_idx].sh_offset;
+    size_t str_table_offset = section_headers[str_table_idx].sh_offset; /* string table offset, relative to elf base */
    
     size_t __vsyscall_str_size = strlen("__vsyscall");
     char *section_name = malloc(__vsyscall_str_size + 1);
