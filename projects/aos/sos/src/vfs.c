@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <aos/sel4_zf_logif.h>
+#include "syscall_handler/sys_close.h"
 
 int init_vfs(vfs_t **vfs) {
     *vfs = malloc(sizeof(vfs_t));
@@ -14,6 +15,19 @@ int init_vfs(vfs_t **vfs) {
         (*vfs)->fd_table[i].path = NULL;
         (*vfs)->fd_table[i].mode = -1;
     }
+
+    (*vfs)->fd_table[STDIN_FD].is_opened = false;
+    (*vfs)->fd_table[STDIN_FD].path = "stdin";
+
+    // mark stdout and stderr open
+    (*vfs)->fd_table[STDOUT_FD].is_opened = true;
+    (*vfs)->fd_table[STDOUT_FD].path = "stdout";
+    (*vfs)->fd_table[STDOUT_FD].mode = O_WRONLY;
+
+    (*vfs)->fd_table[STDERR_FD].is_opened = true;
+    (*vfs)->fd_table[STDERR_FD].path = "stderr";
+    (*vfs)->fd_table[STDERR_FD].mode = O_WRONLY;
+
     (*vfs)->fd_table[CONSOLE_FD].is_opened = true;
     (*vfs)->fd_table[CONSOLE_FD].path = "console";
     (*vfs)->fd_table[CONSOLE_FD].mode = O_WRONLY;
@@ -21,10 +35,11 @@ int init_vfs(vfs_t **vfs) {
 }
 
 void destroy_vfs(vfs_t *vfs) {
+    // TODO: need to check if console fd was opened to read, then close it as well.
     for (int i = 4; i < PROCESS_MAX_FILES; i++) {
         // close all file descriptors
         if (vfs->fd_table[i].is_opened) {
-            // TODO: call nfs wrapper for sos_close
+            handle_sos_close(i);
         }
     }
     free(vfs);

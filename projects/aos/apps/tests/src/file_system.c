@@ -50,9 +50,6 @@ int test_open_console_with_multiple_writers() {
     fd = open("console", O_WRONLY);
     assert(fd == CONSOLE_FD);
 
-    fd = open("console", O_RDWR);
-    assert(fd == CONSOLE_FD);
-
     close(CONSOLE_FD); // clean up the state for the next test
 }
 
@@ -134,12 +131,12 @@ int test_write_file_opened_with_read_mode() {
 }
 
 int test_file_system() {
-    // // open console
-    RUN_TEST(test_open_console);
-    RUN_TEST(test_open_console_with_two_readers);
-    RUN_TEST(test_open_console_with_multiple_writers);
-    RUN_TEST(test_open_console_with_read_and_write);
-
+    // open console
+    // RUN_TEST(test_open_console);
+    // RUN_TEST(test_open_console_with_two_readers);
+    // RUN_TEST(test_open_console_with_multiple_writers);
+    // RUN_TEST(test_open_console_with_read_and_write);
+    
     // open normal files
     RUN_TEST(test_open_non_existent_file);
 

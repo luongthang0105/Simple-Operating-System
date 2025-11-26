@@ -13,7 +13,8 @@
 #include <aos/debug.h>
 #include "string.h"
 #include "../nfs_wrapper.h"
-
+#include <clock/clock.h>
+#include "../utils.h"
 /* The number of additional stack pages to provide to the initial
  * process */
 #define INITIAL_PROCESS_STACK_PAGES 10
@@ -101,26 +102,6 @@ static int read_elf_header(struct nfsfh* elf_fh, unsigned char** elf_header_data
     }
 
     return status;
-}
-
-typedef struct
-{
-    size_t thread_index;
-    int status;
-} nfs_close_cb_args_t;
-
-static void nfs_close_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
-{
-    nfs_close_cb_args_t *args = private_data;
-    args->status = status;
-
-    if (status < 0)
-    {
-        ZF_LOGE("nfs_close failed with error: %s\n", (char *)data);
-    }
-
-    seL4_Signal(worker_threads[args->thread_index]->ntfn);
-    return;
 }
 
 /**
@@ -414,10 +395,13 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     return stack_top;
 }
 
-bool create_process(char *app_name, seL4_CPtr ep, sos_pid_t pid, elf_t* elf_file, struct nfsfh* elf_fh) 
+bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, struct nfsfh* elf_fh) 
 {
     user_processes[pid] = malloc(sizeof(user_process_t));    
     ZF_LOGF_IF(!user_processes[pid], "Failed to malloc user_process_t for pid=%u", pid);
+
+    strncpy(user_processes[pid]->command, app_name, N_NAME);
+    user_processes[pid]->stime = get_time() / 1000;
 
     user_process_t *user_process = user_processes[pid];
 
@@ -539,7 +523,7 @@ bool create_process(char *app_name, seL4_CPtr ep, sos_pid_t pid, elf_t* elf_file
     err = seL4_TCB_SetSchedParams(user_process->tcb, seL4_CapInitThreadTCB, seL4_MinPrio, APP_PRIORITY,
                                   user_process->sched_context, ep);
     if (err != seL4_NoError) {
-        ZF_LOGE("Unable to set scheduling params");
+        ZF_LOGE("Unable to set scheduling params, seL4_Error = %d\n", err);
         return false;
     }
 
@@ -631,7 +615,7 @@ int handle_sos_process_create() {
     }
 
     // gets next pid
-    sos_pid_t pid = get_available_pid();
+    pid_t pid = get_available_pid();
     if (pid == -1) {
         ZF_LOGE("Reached max num processes");
 
@@ -663,9 +647,6 @@ int handle_sos_process_create() {
     }
 
     worker_thread->assigned_pid = pid;
-    
-    strncpy(user_processes[pid]->command, path, 32); // TODO: MAGIC NUMBER
-    user_processes[pid]->command[31] = '\0';
 
     return pid;
 }

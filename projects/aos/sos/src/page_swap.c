@@ -6,47 +6,20 @@
 #include "mapping.h"
 #include "cap_utils.h"
 #include "backtrace.h"
-#ifdef CONFIG_SOS_FRAME_LIMIT
-/* The queue would contain (`PAGES_QUEUE_MAX_SIZE - 1`) pages only, because of the `SGLIB_QUEUE` being a ring buffer (so it keeps 1 slot to identify fullness of the queue). 
-However, it is okay because we do not store frame 0 (the sentinel NULL frame). */
-#define PAGES_QUEUE_MAX_SIZE    ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : CONFIG_SOS_FRAME_LIMIT) 
-#define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 150))
-#else
-#define PAGES_QUEUE_MAX_SIZE (1 << 19)
-#define OFFSET_QUEUE_MAX_SIZE (1 << 19)
-#endif
 
 extern cspace_t cspace;
 struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
 struct nfs_context *nfs;
 bool has_init_page_swap = false;
 
-/*  A queue that contains the in-memory pages that is used to evict a page using the second-chance replacement policy.
-*/
-typedef struct pages_queue
-{
-    page_metadata_t *arr[PAGES_QUEUE_MAX_SIZE];
-    size_t i;
-    size_t j;
-} pages_queue_t;
-
 pages_queue_t in_memory_pages;
-sync_mutex_t *in_memory_pages_mutex;
-
-/*  A queue that contains the currently free space in the pagefile (determined by the offset)
-    It should always have at least one item in it, which is the offset to the end of the file.
-    The initial item in the queue is offset 0.
-*/
-typedef struct free_pagefile_offsets {
-    size_t arr[OFFSET_QUEUE_MAX_SIZE];
-    size_t i;
-    size_t j;
-    size_t eof_offset;
-} offset_queue_t;
+sync_recursive_mutex_t *in_memory_pages_mutex;
 
 offset_queue_t free_pagefile_offsets;
-sync_mutex_t *free_pagefile_offsets_mutex;
+sync_recursive_mutex_t *free_pagefile_offsets_mutex;
 
+SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
+SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
 
 typedef struct nfs_open_pagefile_cb_args {
     seL4_CPtr ntfn;
@@ -96,12 +69,10 @@ static void write_to_pagefile(page_metadata_t *page_metadata);
  */
 static size_t free_pagefile_offsets_pop();
 static void free_pagefile_offsets_add(size_t new_offset);
-SGLIB_DEFINE_QUEUE_FUNCTIONS(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
-SGLIB_DEFINE_QUEUE_FUNCTIONS(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
 
-int swap_to_mem(page_metadata_t *page) {
-    evict_page();
-    
+int swap_to_mem(page_metadata_t *page) {   
+    sync_recursive_mutex_lock(in_memory_pages_mutex);
+
     frame_ref_t frame_ref = alloc_frame();
     assert(frame_ref != NULL_FRAME);
 
@@ -118,6 +89,8 @@ int swap_to_mem(page_metadata_t *page) {
     if (frame_cptr == seL4_CapNull) {
         free_frame(frame_ref);
         ZF_LOGE("Failed to alloc slot for extra frame cap");
+        sync_recursive_mutex_unlock(in_memory_pages_mutex);
+
         return seL4_NotEnoughMemory;
     }
 
@@ -127,39 +100,41 @@ int swap_to_mem(page_metadata_t *page) {
         cspace_free_slot(&cspace, frame_cptr);
         free_frame(frame_ref);
         ZF_LOGE("Failed to copy cap, seL4_Error = %d\n", err);
+        sync_recursive_mutex_unlock(in_memory_pages_mutex);
+
         return err;
     }
 
     // update the page's status
     page->frame_ref = frame_ref;
     page->frame_cap = frame_cptr;
-    page->reference_bit = 0;
+    page->reference_bit = 1;
     page->pagefile_offset = -1;
-    
+
     in_memory_pages_add(page);
+    sync_recursive_mutex_unlock(in_memory_pages_mutex);
+
     return 0;
 }
 
 void in_memory_pages_add(page_metadata_t *page) {
-    sync_mutex_lock(in_memory_pages_mutex);
-
+    sync_recursive_mutex_lock(in_memory_pages_mutex);
     sglib_pages_queue_t_add(&in_memory_pages, page);
-    
-    sync_mutex_unlock(in_memory_pages_mutex);
+    sync_recursive_mutex_unlock(in_memory_pages_mutex);
 }
 
 page_metadata_t *in_memory_pages_pop() {
-    sync_mutex_lock(in_memory_pages_mutex);
+    sync_recursive_mutex_lock(in_memory_pages_mutex);
     
     page_metadata_t *page = sglib_pages_queue_t_first_element(&in_memory_pages);
     sglib_pages_queue_t_delete_first(&in_memory_pages);
     
-    sync_mutex_unlock(in_memory_pages_mutex);
+    sync_recursive_mutex_unlock(in_memory_pages_mutex);
     return page;
 }
 
 static size_t free_pagefile_offsets_pop() {
-    sync_mutex_lock(&free_pagefile_offsets_mutex);
+    sync_recursive_mutex_lock(free_pagefile_offsets_mutex);
     
     if (!sglib_offset_queue_t_is_empty(&free_pagefile_offsets)) {
         size_t available_offset = sglib_offset_queue_t_first_element(&free_pagefile_offsets);
@@ -169,20 +144,20 @@ static size_t free_pagefile_offsets_pop() {
             free_pagefile_offsets.eof_offset += PAGE_SIZE_4K;
             sglib_offset_queue_t_add(&free_pagefile_offsets, free_pagefile_offsets.eof_offset);
         }
-        sync_mutex_unlock(&free_pagefile_offsets_mutex);
+        sync_recursive_mutex_unlock(free_pagefile_offsets_mutex);
         return available_offset;
     }
 
     ZF_LOGE("Free pagefile offset queue is empty!");
-    sync_mutex_unlock(&free_pagefile_offsets_mutex);
+    sync_recursive_mutex_unlock(free_pagefile_offsets_mutex);
 
     return 0;
 }
 
-static void free_pagefile_offsets_add(size_t new_offset) {
-    sync_mutex_lock(&free_pagefile_offsets_mutex);
+void free_pagefile_offsets_add(size_t new_offset) {
+    sync_recursive_mutex_lock(free_pagefile_offsets_mutex);
     sglib_offset_queue_t_add(&free_pagefile_offsets, new_offset);
-    sync_mutex_unlock(&free_pagefile_offsets_mutex);
+    sync_recursive_mutex_unlock(free_pagefile_offsets_mutex);
 }
 
 static void write_to_pagefile(page_metadata_t *page_metadata) {
@@ -253,20 +228,16 @@ static void read_from_pagefile(unsigned char* buf, page_metadata_t *page_metadat
 }
 
 void evict_page() {
-    sync_mutex_lock(in_memory_pages_mutex);
+    sync_recursive_mutex_lock(in_memory_pages_mutex);
+
     while (!sglib_pages_queue_t_is_empty(&in_memory_pages)) {
         page_metadata_t *page = sglib_pages_queue_t_first_element(&in_memory_pages);
         sglib_pages_queue_t_delete_first(&in_memory_pages);
-
-        if (!page->in_use) {
-            free(page);
-            continue;
-        }
         
         if (page->reference_bit == 1) { /* give it a second chance */
             page->reference_bit = 0;
             sglib_pages_queue_t_add(&in_memory_pages, page);
-
+            
             // unmap the page so that we can simulate the reference bit via vm fault
             seL4_Error err = seL4_ARM_Page_Unmap(page->frame_cap);
             ZF_LOGF_IF(err != seL4_NoError, "Unable to unmap the page, seL4_Error = %d\n", err);
@@ -280,7 +251,8 @@ void evict_page() {
             break;
         }
     }
-    sync_mutex_unlock(in_memory_pages_mutex);
+
+    sync_recursive_mutex_unlock(in_memory_pages_mutex);
 }
 
 seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vaddr, seL4_CapRights_t rights) {
@@ -295,11 +267,11 @@ seL4_Error reference_page(page_metadata_t *page, seL4_CPtr vspace, seL4_Word vad
 
 void init_page_swap() {
     // initialize the mutexes
-    in_memory_pages_mutex = malloc(sizeof(sync_mutex_t));
-    free_pagefile_offsets_mutex = malloc(sizeof(sync_mutex_t));
+    in_memory_pages_mutex = malloc(sizeof(sync_recursive_mutex_t));
+    free_pagefile_offsets_mutex = malloc(sizeof(sync_recursive_mutex_t));
 
-    sync_mutex_new(in_memory_pages_mutex);
-    sync_mutex_new(free_pagefile_offsets_mutex);
+    sync_recursive_mutex_new(in_memory_pages_mutex);
+    sync_recursive_mutex_new(free_pagefile_offsets_mutex);
 
     // open the pagefile
     nfs = get_nfs_context();

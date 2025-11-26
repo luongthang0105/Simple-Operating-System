@@ -17,5 +17,6 @@ int main(void) {
     // test_process();
     
     printf(COLOR_GREEN "ALL TESTS PASSED ✅!\n" COLOR_RESET);
+    // while(1);
     return 0;
 }

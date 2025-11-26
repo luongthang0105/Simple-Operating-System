@@ -14,7 +14,10 @@ typedef int fmode_t;
 #define ST_SPECIAL 2    /* special (console) file */
 typedef int st_type_t;
 
-#define CONSOLE_FD 3    /* File descriptors 0,1,2 are already reserved for stdin, stdout and stderr */
+#define STDIN_FD   0
+#define STDOUT_FD  1
+#define STDERR_FD  2
+#define CONSOLE_FD 3
 #define PROCESS_MAX_FILES 16
 
 typedef struct {

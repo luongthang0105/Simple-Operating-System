@@ -16,6 +16,6 @@ int handle_sos_process_create();
  * @param 
  * @returns
  */
-bool create_process(char *app_name, seL4_CPtr ep, sos_pid_t pid, elf_t* elf_file, 
+bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, 
                     struct nfsfh* elf_fh);
 

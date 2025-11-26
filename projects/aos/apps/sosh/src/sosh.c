@@ -65,8 +65,11 @@ static int cat(int argc, char **argv)
         num_written = write(stdout_fd, buf, num_read);
     }
 
-    close(stdout_fd);
-    close(fd);
+    int ret = close(stdout_fd);
+    assert(ret == 0);
+    
+    ret = close(fd);
+    assert(ret == 0);
 
     if (num_read == -1 || num_written == -1) {
         printf("error on write\n");
@@ -296,7 +299,7 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
 
 int main(void)
 {   
-    in = open("console", O_RDWR);
+    in = open("console", O_RDONLY);
     assert(in >= 0);
     
     printf("\n[SOS Starting]\n");

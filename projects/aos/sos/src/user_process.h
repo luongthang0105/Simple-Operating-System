@@ -3,14 +3,16 @@
 #include "vm_region.h"
 #include <nfsc/libnfs.h>
 #include <sossharedapi/vfs.h>
-#include "mutex.h"
+#include <sossharedapi/process.h>
+#include "recursive_mutex.h"
 
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
-typedef int32_t sos_pid_t;
 struct user_process
-{
-    char command[32];
+{   
+    unsigned  size;            /* in pages */
+    unsigned  stime;           /* start time in msec since booting */
+    char      command[N_NAME]; /* Name of executable */
     ut_t *tcb_ut;
     seL4_CPtr tcb;
     ut_t *vspace_ut;
@@ -52,7 +54,7 @@ extern user_process_t *user_processes[MAX_NUM_PROCESSES];
 */
 typedef struct
 {
-    sos_pid_t pid;
+    pid_t pid;
     uint64_t freed_timestamp;
 } pid_free_record_t;
 
@@ -68,7 +70,7 @@ typedef struct pid_queue
 } pid_queue_t;
 
 extern pid_queue_t free_pids;
-sync_mutex_t *free_pids_mutex;
+sync_recursive_mutex_t *free_pids_mutex;
 
 /** Copy data from SOS to user app.
  *  @returns 0 if `nbyte` was successfully copied, -1 otherwise.
@@ -85,7 +87,6 @@ int copy_from_user(void *to, const void *from, size_t nbyte);
 user_process_t *get_current_user_process();
 user_process_t *get_current_user_process_by_thread(uint64_t thread_id);
 void init_free_pids();
-
 /**
  * Returns an available pid.
  * 
@@ -93,3 +94,5 @@ void init_free_pids();
  */
 int get_available_pid();
 int delete_user_process(int pid);
+int get_num_active_processes();
+void get_user_process_status(sos_process_t *processes, int num_active_processes);

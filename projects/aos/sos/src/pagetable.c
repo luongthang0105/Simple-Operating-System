@@ -88,6 +88,7 @@ void destroy_pgd(pgd_t *pgd, cspace_t *cspace) {
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_pud(pgd->page_upper_directories[i], cspace); 
+        pgd->page_upper_directories[i] = NULL;
     }
 
     free(pgd);
@@ -100,6 +101,7 @@ void destroy_pud(pud_t *pud, cspace_t *cspace) {
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_pd(pud->page_directories[i], cspace);
+        pud->page_directories[i] = NULL;
     }
 
     unmap_page_object(pud->slot, pud->ut, cspace, PAGE_UPPER_DIRECTORY_NAME);
@@ -114,6 +116,7 @@ void destroy_pd(pd_t *pd, cspace_t *cspace) {
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_pt(pd->page_tables[i], cspace);
+        pd->page_tables[i] = NULL;
     }
 
     unmap_page_object(pd->slot, pd->ut, cspace, PAGE_DIRECTORY_NAME);
@@ -128,8 +131,9 @@ void destroy_pt(pt_t *pt, cspace_t *cspace) {
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_page(pt->page_metadatas[i], cspace);
+        pt->page_metadatas[i] = NULL;
     }
-
+    // TODO: check for failure for these unmap_page_object calls, maybe ZF_LOGF when crash
     unmap_page_object(pt->slot, pt->ut, cspace, PAGE_TABLE_NAME);
     free(pt);
 
@@ -138,6 +142,8 @@ void destroy_pt(pt_t *pt, cspace_t *cspace) {
 void destroy_page(page_metadata_t *page, cspace_t *cspace) {
     if (page == NULL) return;
 
+    sync_recursive_mutex_lock(in_memory_pages_mutex); // locks this to make sure the swapped page is not evicted before it deallocs.
+
     if (page->pagefile_offset != -1) { /* page is currently on the disk */
         swap_to_mem(page);
     }
@@ -145,11 +151,19 @@ void destroy_page(page_metadata_t *page, cspace_t *cspace) {
     // destruct page_metadata
     seL4_Error err = dealloc_unmap_frame(cspace, page);
     ZF_LOGF_IF(err != seL4_NoError, "Unable to deallocate and unmap the page, seL4_Error = %d\n", err);
+
+    // remove it from queue
+    while (sglib_pages_queue_t_is_empty(&in_memory_pages) == false) {
+        page_metadata_t *top = sglib_pages_queue_t_first_element(&in_memory_pages);
+        sglib_pages_queue_t_delete(&in_memory_pages);
+        if (page == top) {
+            free(page);
+            break;
+        }
+        sglib_pages_queue_t_add(&in_memory_pages, top);
+    }
     
-    /*  Mark this page as no longer in use. 
-        The evict_page() routine will detect in_use == false and release the page's resources safely.
-    */
-    page->in_use = false;
+    sync_recursive_mutex_unlock(in_memory_pages_mutex);
 }
 
 pgd_t *create_pgd() {
@@ -363,7 +377,9 @@ page_metadata_t *find_page(uintptr_t vaddr, pgd_t *pgd) {
     if (page != NULL) { /* page is either on disk or in memory */
         if (page->pagefile_offset != -1) {   /* page is on disk */
             ret = swap_to_mem(page); /* after bringing back to memory, reference it to map it again */
-        } else { /* page is still in memory. TODO: move this to VM fault, as it should be the one flippin reference bit */
+            ret = reference_page(page, user_process->vspace, vaddr, page->rights);
+        } 
+        else { /* page is still in memory. TODO: move this to VM fault, as it should be the one flippin reference bit */
             if (page->reference_bit == 0) {
                 ret = reference_page(page, user_process->vspace, vaddr, page->rights);
             }

@@ -5,10 +5,10 @@
 #include <fcntl.h>
 #include <nfsc/libnfs.h>
 #include <sel4/sel4.h>
+#include "sys_read.h"
 
 void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data)
 {
-
     sos_open_cb_args_t *ret_private_data = (sos_open_cb_args_t *)private_data;
     int thread_index = ret_private_data->thread_index;
     int fd = ret_private_data->fd;
@@ -34,7 +34,7 @@ int handle_sos_open_nwcs(fmode_t mode)
 
     sos_fd_t *console = &user_process->vfs->fd_table[CONSOLE_FD];
 
-    bool has_reader = (console->mode == O_RDONLY || console->mode == O_RDWR);
+    bool has_reader = (console->mode == O_RDONLY || console->mode == O_RDWR || get_nwcs_reader_value() != -1);
     switch (mode)
     {
     case O_RDONLY:
@@ -42,6 +42,7 @@ int handle_sos_open_nwcs(fmode_t mode)
         if (has_reader)
             return -1; // only allow one nwcs reader
         console->mode = O_RDWR;
+        update_nwcs_reader(current_thread->thread_id);
         break;
     case O_WRONLY:
         console->mode = has_reader ? O_RDWR : O_WRONLY;
@@ -49,7 +50,34 @@ int handle_sos_open_nwcs(fmode_t mode)
     }
     return CONSOLE_FD;
 }
+int handle_sos_open_stdin(fmode_t mode) {
+    if (mode != O_RDONLY) // stdin only allows read mode
+        return -1;
 
+    user_process_t *user_process = get_current_user_process();
+    sos_fd_t *console = &user_process->vfs->fd_table[CONSOLE_FD];
+
+    bool has_reader = (console->mode == O_RDONLY || console->mode == O_RDWR || nwcs_reader != -1);
+    
+    if (has_reader)
+        return -1; // only allow one nwcs reader
+
+    console->mode = O_RDWR;
+    update_nwcs_reader(current_thread->thread_id);
+    return STDIN_FD;
+}
+int handle_sos_open_stdout(fmode_t mode) {
+    if (mode != O_WRONLY) // stdout only allows write mode
+        return -1;
+
+    return STDOUT_FD;
+}
+int handle_sos_open_stderr(fmode_t mode) {
+    if (mode != O_WRONLY) // stderr only allows write mode
+        return -1;
+
+    return STDERR_FD;
+}
 int handle_sos_open()
 {
     ZF_LOGV("syscall: open!\n");
@@ -59,12 +87,6 @@ int handle_sos_open()
     uintptr_t path_vaddr = seL4_GetMR(1);
     size_t path_len = seL4_GetMR(2);
     fmode_t mode = seL4_GetMR(3);
-
-    unsigned char *path_data = find_frame_data(path_vaddr, user_process->page_global_directory);
-    if (!path_data)
-    {
-        return -1;
-    }
 
     char *temp_path_buf = malloc(path_len + 1);
     if (temp_path_buf == NULL)
@@ -81,11 +103,23 @@ int handle_sos_open()
         return -1;
     }
 
-    if (strcmp(temp_path_buf, "console") == 0)
-    {
+    /* Handle special files */
+    if (strcmp(temp_path_buf, "stdout") == 0) {
+        free(temp_path_buf);
+        return handle_sos_open_stdout(mode);
+
+    } else if (strcmp(temp_path_buf, "stderr") == 0) {
+        free(temp_path_buf);
+        return handle_sos_open_stderr(mode);
+
+    } else if (strcmp(temp_path_buf, "stdin") == 0) {
+        free(temp_path_buf);
+        return handle_sos_open_stdin(mode);
+
+    } else if (strcmp(temp_path_buf, "console") == 0) {
         free(temp_path_buf);
         return handle_sos_open_nwcs(mode);
-    }
+    } 
 
     int fd = find_next_fd(user_process->vfs);
 

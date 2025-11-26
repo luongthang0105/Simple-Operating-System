@@ -69,6 +69,7 @@
         "stddef.h": "c",
         "sys_process_delete.h": "c",
         "sys_timestamp.h": "c",
+        "process.h": "c",
         "sys_process_create.h": "c",
         "sys_usleep.h": "c",
         "registers.h": "c",

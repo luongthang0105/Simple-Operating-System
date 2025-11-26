@@ -259,7 +259,9 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
     new_thread->ntfn = bound_ntfn;
     
     /* Provide a name for the thread -- Helpful for debugging */
-    NAME_THREAD(new_thread->tcb, "worker thread");
+    char *thread_name = malloc(THREAD_NAME_MAX_LEN);
+    snprintf(thread_name, THREAD_NAME_MAX_LEN, "worker thread #%d", thread_id);
+    NAME_THREAD(new_thread->tcb, thread_name);
 
     /* set up the stack */
     seL4_Word sp;

@@ -29,10 +29,8 @@ static size_t sos_print(const void *vData, size_t count)
     return count;
 }
 
-// currently does not check for PROCESS_MAX_FILES opened
 int sos_open(const char *path, fmode_t mode)
 {
-    
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
     seL4_SetMR(0, SYSCALL_SOS_OPEN);
     seL4_SetMR(1, path);
@@ -142,8 +140,12 @@ pid_t sos_my_id(void)
 
 int sos_process_status(sos_process_t *processes, unsigned max)
 {
-    assert(!"You need to implement this");
-    return -1;
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_SetMR(0, SYSCALL_SOS_PROCESS_STATUS);
+    seL4_SetMR(1, processes);
+    seL4_SetMR(2, max);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+    return seL4_GetMR(0);
 }
 
 pid_t sos_process_wait(pid_t pid)

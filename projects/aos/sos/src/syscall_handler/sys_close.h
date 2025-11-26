@@ -3,12 +3,6 @@
 #include <stddef.h>
 #include <aos/sel4_zf_logif.h>
 
-typedef struct
-{
-    size_t thread_index;
-    int status;
-} nfs_close_cb_args_t;
-
 /**
  * @brief Handles the sos_close syscall for a user process.
  *
@@ -19,4 +13,4 @@ typedef struct
  *
  * @return 0 on success, or -1 on failure.
  */
-int handle_sos_close();
+int handle_sos_close(size_t fd);

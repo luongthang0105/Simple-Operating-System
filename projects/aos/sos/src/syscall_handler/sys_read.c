@@ -7,6 +7,21 @@
 SGLIB_DEFINE_QUEUE_FUNCTIONS(nwcs_input_t, char, arr, i, j, DIM);
 nwcs_input_t nwcs_input = {.arr = {0}, .i = 0, .j = 0};
 int nwcs_reader = -1; // thread index that is currently the nwcs reader
+sync_recursive_mutex_t *nwcs_reader_mutex;
+
+void update_nwcs_reader(int value) {
+    sync_recursive_mutex_lock(nwcs_reader_mutex);
+    nwcs_reader = value;
+    sync_recursive_mutex_unlock(nwcs_reader_mutex);
+}
+
+int get_nwcs_reader_value() {
+    int value;
+    sync_recursive_mutex_lock(nwcs_reader_mutex);
+    value = nwcs_reader;
+    sync_recursive_mutex_unlock(nwcs_reader_mutex);
+    return value;
+}
 
 void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
 {
@@ -115,7 +130,6 @@ int handle_sos_read()
             {
                 if (sglib_nwcs_input_t_is_empty(&nwcs_input))
                 {
-                    nwcs_reader = current_thread->thread_id;
                     seL4_Wait(current_thread->ntfn, NULL);
                 }
 
@@ -131,7 +145,12 @@ int handle_sos_read()
                 remaining_bytes--;
                 bytes_read++;
             }
-            nwcs_reader = -1;
+        }
+
+        if (failed)
+        { /* must check for failed before early_return because failing cases is more important (higher priority) then */
+            free(data);
+            return -1;
         }
 
         int status = copy_to_user((void *)(buf_vaddr + total_bytes_read), (void *)data, bytes_read);
@@ -142,12 +161,6 @@ int handle_sos_read()
 
         total_bytes_read += bytes_read;
         nbytes -= bytes_read;
-
-        if (failed)
-        { /* must check for failed before early_return because failing cases is more important (higher priority) then */
-            free(data);
-            return -1;
-        }
 
         if (early_return)
         {

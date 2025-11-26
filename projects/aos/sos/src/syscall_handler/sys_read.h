@@ -3,6 +3,7 @@
 #include <sel4/shared_types_gen.h>
 #include <stddef.h>
 #include <aos/sel4_zf_logif.h>
+#include "../recursive_mutex.h"
 
 typedef struct
 {
@@ -30,6 +31,7 @@ extern nwcs_input_t nwcs_input;
  * or -1 when no thread is waiting.
  */
 extern int nwcs_reader;
+extern sync_recursive_mutex_t *nwcs_reader_mutex;
 
 /**
  * @brief Handles the sos_read syscall for a user process.
@@ -44,3 +46,6 @@ extern int nwcs_reader;
  * @return The number of bytes read on success, or -1 on failure.
  */
 int handle_sos_read();
+
+void update_nwcs_reader(int value);
+int get_nwcs_reader_value();

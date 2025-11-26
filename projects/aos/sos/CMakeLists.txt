@@ -74,6 +74,7 @@ add_executable(
     src/user_process.c
     src/nfs_wrapper.c
     src/mutex.c
+    src/recursive_mutex.c
     src/syscall_handler/syscall_handler.c
     src/syscall_handler/sys_open.c
     src/syscall_handler/sys_stat.c
@@ -87,6 +88,7 @@ add_executable(
     src/syscall_handler/sys_process_create.c
     src/syscall_handler/sys_process_delete.c
     src/syscall_handler/sys_my_id.c
+    src/syscall_handler/sys_process_status.c
     src/fault_handler/fault_handler.c
     src/fault_handler/vm_fault.c
 )

@@ -55,6 +55,7 @@
 #include "cap_utils.h"
 #include "syscall_handler/syscall_handler.h"
 #include "fault_handler/fault_handler.h"
+#include "recursive_mutex.h"
 #ifdef CONFIG_SOS_GDB_ENABLED
 #include "debugger.h"
 #endif /* CONFIG_SOS_GDB_ENABLED */
@@ -102,9 +103,12 @@ struct network_console *network_console;
 void write_to_buf(UNUSED struct network_console *network_console, char c) {
     bool is_empty_before = sglib_nwcs_input_t_is_empty(&nwcs_input);
     sglib_nwcs_input_t_add(&nwcs_input, c);
+
+    sync_recursive_mutex_lock(nwcs_reader_mutex);
     if (is_empty_before && nwcs_reader != -1) {
         seL4_Signal(worker_threads[nwcs_reader]->ntfn);
     }
+    sync_recursive_mutex_unlock(nwcs_reader_mutex);
 }
 
 NORETURN void syscall_loop(void* arg)
@@ -341,7 +345,9 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* Initialize network console buffer */
     // SGLIB_QUEUE_INIT(char, nwcs_buf, i, j);
     network_console_register_handler(network_console, write_to_buf);
-
+    nwcs_reader_mutex = malloc(sizeof(sync_recursive_mutex_t));
+    sync_recursive_mutex_new(nwcs_reader_mutex);
+    
     /* Init page swap */
     init_page_swap();
     nfs_call_loop(ipc_ep, &has_init_page_swap);
