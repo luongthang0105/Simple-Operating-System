@@ -105,13 +105,26 @@ int swap_to_mem(page_metadata_t *page) {
         return err;
     }
 
-    // update the page's status
+    /*  Update the page's status. The page's virtual address (vaddr) and rights do not need updating here:
+        - vaddr is fixed and always page-aligned
+        - rights are determined by the region the page belongs to and must remain consistent
+    */
     page->frame_ref = frame_ref;
     page->frame_cap = frame_cptr;
     page->reference_bit = 1;
     page->pagefile_offset = -1;
 
+    err = reference_page(page, get_current_user_process()->vspace, page->aligned_vaddr, page->rights);
+    if (err != seL4_NoError) {
+        cspace_free_slot(&cspace, frame_cptr);
+        free_frame(frame_ref);
+        ZF_LOGE("Failed to reference page when swap page from disk to memory, seL4_Error = %d\n", err);
+        sync_recursive_mutex_unlock(in_memory_pages_mutex);
+        return err;
+    }
+
     in_memory_pages_add(page);
+
     sync_recursive_mutex_unlock(in_memory_pages_mutex);
 
     return 0;

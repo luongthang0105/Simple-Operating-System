@@ -189,13 +189,14 @@ seL4_Error alloc_map_frame(cspace_t *cspace, uintptr_t vaddr, user_process_t *us
         return seL4_NotEnoughMemory;
     }
 
+    uintptr_t aligned_vaddr = PAGE_ALIGN_4K(vaddr); /* seL4 page map methods only accepts vaddr that aligns with the size of a Page (4KB) */
+
     page_metadata->frame_ref = frame;
     page_metadata->frame_cap = frame_cptr;
     page_metadata->reference_bit = 1;
     page_metadata->pagefile_offset = -1;
     page_metadata->rights = rights;
-    
-    uintptr_t aligned_vaddr = PAGE_ALIGN_4K(vaddr); /* seL4 page map methods only accepts vaddr that aligns with the size of a Page (4KB) */
+    page_metadata->aligned_vaddr = aligned_vaddr;
 
     err = sos_map_frame(cspace, page_metadata, aligned_vaddr,
                     rights, seL4_ARM_Default_VMAttributes, user_process);

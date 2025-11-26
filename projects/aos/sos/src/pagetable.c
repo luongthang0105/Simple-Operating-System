@@ -144,12 +144,14 @@ void destroy_page(page_metadata_t *page, cspace_t *cspace) {
 
     sync_recursive_mutex_lock(in_memory_pages_mutex); // locks this to make sure the swapped page is not evicted before it deallocs.
 
+    seL4_Error err;
     if (page->pagefile_offset != -1) { /* page is currently on the disk */
-        swap_to_mem(page);
+        err = swap_to_mem(page);
+        ZF_LOGF_IF(err != seL4_NoError, "Failed to swap the page to memory, seL4_Error = %d\n", err);
     }
 
     // destruct page_metadata
-    seL4_Error err = dealloc_unmap_frame(cspace, page);
+    err = dealloc_unmap_frame(cspace, page);
     ZF_LOGF_IF(err != seL4_NoError, "Unable to deallocate and unmap the page, seL4_Error = %d\n", err);
 
     // remove it from queue
@@ -372,14 +374,15 @@ page_metadata_t *find_page(uintptr_t vaddr, pgd_t *pgd) {
         ZF_LOGE("%s does not exist", PAGE_TABLE_NAME);
         return NULL;
     }
+
     int ret = 0;
     page_metadata_t *page = pt->page_metadatas[pt_index];
+
     if (page != NULL) { /* page is either on disk or in memory */
         if (page->pagefile_offset != -1) {   /* page is on disk */
-            ret = swap_to_mem(page); /* after bringing back to memory, reference it to map it again */
-            ret = reference_page(page, user_process->vspace, vaddr, page->rights);
+            ret = swap_to_mem(page);
         } 
-        else { /* page is still in memory. TODO: move this to VM fault, as it should be the one flippin reference bit */
+        else { /* page is still in memory. */
             if (page->reference_bit == 0) {
                 ret = reference_page(page, user_process->vspace, vaddr, page->rights);
             }

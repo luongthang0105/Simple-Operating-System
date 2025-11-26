@@ -12,7 +12,8 @@ struct page_metadata
     seL4_CPtr frame_cap;
     int reference_bit;
     int pagefile_offset;
-    seL4_CapRights_t rights;
+    seL4_CapRights_t rights; // rights of the vm_region that this page lies within
+    uintptr_t aligned_vaddr;
 };
 typedef struct page_metadata page_metadata_t;
 
