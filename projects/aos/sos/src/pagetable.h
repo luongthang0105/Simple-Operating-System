@@ -13,7 +13,6 @@ struct page_metadata
     int reference_bit;
     int pagefile_offset;
     seL4_CapRights_t rights;
-    bool in_use;
 };
 typedef struct page_metadata page_metadata_t;
 

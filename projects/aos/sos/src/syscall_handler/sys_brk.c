@@ -47,6 +47,7 @@ uintptr_t handle_sos_brk() {
             if (ret == -1) {
                 return 0;
             }
+            user_process->size -= 1; // assumption: this is the only place where we will decrease allocate page
             next_page_vaddr_to_dealloc -= PAGE_SIZE_4K;
         }
     }

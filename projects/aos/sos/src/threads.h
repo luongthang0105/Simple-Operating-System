@@ -18,11 +18,12 @@
 #include "ut.h"
 #include <sos/gen_config.h>
 
+#define THREAD_NAME_MAX_LEN     32
 extern cspace_t cspace;
 
 typedef struct {
-    sos_pid_t assigned_pid;
-    sos_pid_t thread_id;
+    pid_t assigned_pid;
+    uint32_t thread_id;
     
     ut_t *tcb_ut;
     seL4_CPtr tcb;

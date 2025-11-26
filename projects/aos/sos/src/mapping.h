@@ -85,7 +85,7 @@ void *sos_map_device(cspace_t *cspace, uintptr_t addr, size_t size);
 
 /* Allocate a new frame then map a page to that frame, allocating intermediate structures and cslots with the cspace provided.
  * Any intermediate structures, frames, cptrs allocated are saved, so that they can be deleted in the future.
- *
+ * TODO: free allocated frames, cptrs, etc. when fail
  * @param cspace          CSpace which can be used to allocate slots for intermediate paging structures.
  * @param vaddr           The virtual address to map the frame.
  * @param user_process    The user process that wants to map a frame.

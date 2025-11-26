@@ -3,6 +3,7 @@
 #include "threads.h"
 #include "cap_utils.h"
 #include <clock/clock.h>
+#include <sossharedapi/process.h>
 
 extern cspace_t cspace;
 
@@ -10,15 +11,44 @@ user_process_t *user_processes[MAX_NUM_PROCESSES] = {NULL};
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t, arr, i, j, MAX_NUM_PROCESSES + 1);
 pid_queue_t free_pids = {.arr = {0}, .i = 0, .j = 0};
 
+int get_num_active_processes() {
+    int num_active_processes = 0;
+    for (pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
+        if (user_processes[pid] != NULL) {
+            num_active_processes += 1;
+        }
+    }
+    return num_active_processes;
+}
+
+void get_user_process_status(sos_process_t *processes, int num_active_processes) {
+    int i = 0;
+    pid_t pid = 0;
+    while (i < num_active_processes && pid < MAX_NUM_PROCESSES) {
+        user_process_t *current_process = user_processes[pid];
+        if (current_process != NULL) {
+            sos_process_t sos_process_status = { 
+                .pid = pid, 
+                .size = current_process->size,
+                .stime = current_process->stime,
+            };
+            strncpy(sos_process_status.command, current_process->command, N_NAME);
+            processes[i] = sos_process_status;
+            i++;
+        }
+        pid++;
+    }
+}
+
 void init_free_pids() {
-    for (sos_pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
+    for (pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
         /*  let timestamp be 0 initially, so that it would always be available to use at first. */
         pid_free_record_t record = { .pid = pid, .freed_timestamp = 0 };
         sglib_pid_queue_t_add(&free_pids, record);
     }
     // initialise the mutex
-    free_pids_mutex = malloc(sizeof(sync_mutex_t));
-    sync_mutex_new(free_pids_mutex);
+    free_pids_mutex = malloc(sizeof(sync_recursive_mutex_t));
+    sync_recursive_mutex_new(free_pids_mutex);
 }
 
 int delete_user_process(int pid) {
@@ -51,6 +81,8 @@ int delete_user_process(int pid) {
 
     /* user_ep */
     free_cap(NULL, user_process->user_ep);
+    printf("delete user_ep");
+
     /* TCB object */
     free_cap(user_process->tcb_ut, user_process->tcb);
     printf("delete tcb\n");
@@ -63,27 +95,28 @@ int delete_user_process(int pid) {
     printf("reuse pid\n");
 
     /* vspace */
-    // TODO: unassigned vspace from an asid pool. currently could not find a function for this
     free_cap(user_process->vspace_ut, user_process->vspace);
     printf("delete vspace\n");
 
     /* cspace */
     cspace_destroy(&user_process->cspace);
+    printf("delete cspace\n");
 
     free(user_process);
     user_processes[pid] = NULL;
-    
+    current_thread->assigned_pid = -1;
+    printf("free user process");
     return 0;
 }
 
 #define PID_REUSE_COOLDOWN_US 1000
 
 int get_available_pid() {
-    sync_mutex_lock(free_pids_mutex);
+    sync_recursive_mutex_lock(free_pids_mutex);
 
     if (sglib_pid_queue_t_is_empty(&free_pids)) {
         printf("free pids queue is empty!!!!\n");
-        sync_mutex_unlock(free_pids_mutex);
+        sync_recursive_mutex_unlock(free_pids_mutex);
         return -1;
     }
 
@@ -100,13 +133,13 @@ int get_available_pid() {
         }
     }
     
-    sync_mutex_unlock(free_pids_mutex);
+    sync_recursive_mutex_unlock(free_pids_mutex);
     return result;
 }
 
 user_process_t *get_current_user_process_by_thread(uint64_t thread_id)
 {
-    sos_pid_t assigned_pid = worker_threads[thread_id]->assigned_pid;
+    pid_t assigned_pid = worker_threads[thread_id]->assigned_pid;
     return user_processes[assigned_pid];
 }
 user_process_t *get_current_user_process()
