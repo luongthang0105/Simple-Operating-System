@@ -73,7 +73,10 @@ int delete_user_process(int pid) {
 
     user_processes[pid] = NULL;
 
-    /* First, suspend the thread so our subsequent destruction steps don't cause any fault/unexpected behaviour. */
+    /** It is essential that this is the first step when deleting a user process so it does not cause any fault/unexpected behaviour. 
+     *  For example, if `current_thread->assigned_pid = -1` is called before this, then a NFS callback argument might take `expected_pid` as -1,
+     *  hence causing unexpected behaviors.
+    */
     seL4_Error err = seL4_TCB_Suspend(user_process->tcb);
     if (err != seL4_NoError) {
         ZF_LOGE("Failed to suspend user process, seL4_Error=%d", err);
