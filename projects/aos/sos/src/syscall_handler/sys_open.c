@@ -80,6 +80,7 @@ int handle_sos_open_stdin(fmode_t mode) {
 
     console->mode = O_RDWR;
     update_nwcs_reader(current_thread->thread_id);
+    user_process->vfs->fd_table[STDIN_FD].is_opened = true;
     return STDIN_FD;
 }
 int handle_sos_open_stdout(fmode_t mode) {

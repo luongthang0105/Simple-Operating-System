@@ -29,7 +29,6 @@ int handle_sos_close(size_t fd)
 
     if (fd == STDIN_FD) {
         file->is_opened = false;
-        file->mode = -1;
         update_nwcs_reader(-1);
         return 0;
     }

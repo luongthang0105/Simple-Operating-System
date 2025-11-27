@@ -367,9 +367,6 @@ bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, st
     user_processes[pid] = malloc(sizeof(user_process_t));    
     ZF_LOGF_IF(!user_processes[pid], "Failed to malloc user_process_t for pid=%u", pid);
 
-    strncpy(user_processes[pid]->command, app_name, N_NAME);
-    user_processes[pid]->stime = get_time() / 1000;
-
     user_process_t *user_process = user_processes[pid];
 
     /* Create a VSpace */ 
@@ -523,9 +520,13 @@ bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, st
         .sp = sp,
     };
 
+    strncpy(user_process->command, app_name, N_NAME);
+    user_process->stime = get_time() / 1000;
+    
     printf("Starting %s at %p\n", app_name, (void *) context.pc);
     err = seL4_TCB_WriteRegisters(user_process->tcb, true, 0, sizeof(context) / sizeof(seL4_Word), &context);
     ZF_LOGE_IF(err, "Failed to write registers");
+
     return err == seL4_NoError;
 }
 
