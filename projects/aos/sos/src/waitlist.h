@@ -5,7 +5,6 @@
 
 typedef struct waitlist {
     list_t *ntfns;
-    sync_recursive_mutex_t *mutex;
 } waitlist_t;
 
 extern cspace_t cspace;
