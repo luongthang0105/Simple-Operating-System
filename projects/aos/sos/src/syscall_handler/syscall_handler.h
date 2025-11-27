@@ -10,6 +10,7 @@
 #include "sys_timestamp.h"
 #include "sys_process_create.h"
 #include "sys_process_delete.h"
+#include "sys_process_wait.h"
 #include "sys_process_status.h"
 #include "sys_my_id.h"
 #include <utils/attribute.h>

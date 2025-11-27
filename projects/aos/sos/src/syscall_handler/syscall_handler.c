@@ -54,6 +54,9 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     case SYSCALL_SOS_MY_ID:
         ret = handle_sos_my_id();
         break;
+    case SYSCALL_SOS_PROCESS_WAIT:
+        ret = handle_sos_process_wait();
+        break;
     case SYSCALL_SOS_PROCESS_STATUS:
         ret = handle_sos_process_status();
         break;

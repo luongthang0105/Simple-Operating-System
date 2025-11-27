@@ -75,6 +75,7 @@
         "registers.h": "c",
         "sched_ctrl.h": "c",
         "user_app.h": "c",
-        "nfs_wrapper.h": "c"
+        "nfs_wrapper.h": "c",
+        "waitlist.h": "c"
     }
 }

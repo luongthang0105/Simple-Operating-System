@@ -391,6 +391,11 @@ NORETURN void *main_continued(UNUSED void *arg)
     sos_thread_t* interrupt_thread = thread_create(SOS_INTERRUPT_THREAD_ID, syscall_loop, &interrupts_handler_args, SOS_INTERRUPT_THREAD_ID + 1, true, seL4_MaxPrio, ntfn, true);
     ZF_LOGF_IF(!interrupt_thread, "Failed to create interrupt thread");
 
+    /* init user_processes_mutex */
+    user_processes_mutex = malloc(sizeof(sync_recursive_mutex_t));
+    ZF_LOGF_IF(!user_processes_mutex, "Failed to create user processes mutex");
+    sync_recursive_mutex_new(user_processes_mutex);
+
     /* Create the bootstrap thread. It will load the first user process, then transition into the syscall loop. */
     sos_thread_t *boostrap_thread = create_worker_thread(SOS_BOOTSTRAP_THREAD_ID, start_first_process_then_loop, false);
     

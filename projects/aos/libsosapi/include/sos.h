@@ -95,6 +95,7 @@ int sos_process_status(sos_process_t *processes, unsigned max);
 pid_t sos_process_wait(pid_t pid);
 /* Wait for process "pid" to exit. If "pid" is -1, wait for any process
  * to exit. Returns the pid of the process which exited.
+   If there does not exist any running user process (other than the current user process), returns -1.
  */
 
 int64_t sos_time_stamp(void);

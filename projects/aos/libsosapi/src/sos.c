@@ -150,9 +150,11 @@ int sos_process_status(sos_process_t *processes, unsigned max)
 
 pid_t sos_process_wait(pid_t pid)
 {
-    assert(!"You need to implement this");
-    return -1;
-
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 2);
+    seL4_SetMR(0, SYSCALL_SOS_PROCESS_WAIT);
+    seL4_SetMR(1, pid);
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+    return seL4_GetMR(0);
 }
 
 void sos_usleep(int usec)

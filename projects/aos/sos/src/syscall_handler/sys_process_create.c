@@ -15,6 +15,8 @@
 #include "../nfs_wrapper.h"
 #include <clock/clock.h>
 #include "../utils.h"
+#include <elf/elf64.h>
+
 /* The number of additional stack pages to provide to the initial
  * process */
 #define INITIAL_PROCESS_STACK_PAGES 10
@@ -206,13 +208,11 @@ static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
     mapped_stack[index] = val;
     return index - 1;
 }
-#include <elf/elf64.h>
 /** Extract the `__vsyscall` section offset, with respect to the elf base.
  * This function does not handle corrupted ELF file.
 */
 static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf_fh) {
     /* assume given elf is elf64 */
-    // Elf64_Ehdr elf_header = elf64_getHeader(elf_file);
 
     /** Section table is an array of headers. We can extract section name offset (w.r.t string table) from it. 
         Now load section table to memory to easily access it. 
@@ -236,10 +236,7 @@ static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf
     }
 
     size_t str_table_idx = elf_getSectionStringTableIndex(elf_file);
-
-    /* string table offset, relative to elf base */
-    // size_t str_table_offset1 = (uintptr_t)elf_getSection(elf_file, str_table_idx) - (uintptr_t)elf_file->elfFile;
-    size_t str_table_offset = section_headers[str_table_idx].sh_offset;
+    size_t str_table_offset = section_headers[str_table_idx].sh_offset; /* string table offset, relative to elf base */
    
     size_t __vsyscall_str_size = strlen("__vsyscall");
     char *section_name = malloc(__vsyscall_str_size + 1);
@@ -443,6 +440,12 @@ bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, st
         ZF_LOGE("Failed to init vm regions");
         return false;
     }   
+
+    /* Init waitlist*/
+    if (init_waitlist(&user_process->waitlist) == -1) {
+        ZF_LOGE("Failed to init waitlist");
+        return false;
+    }
 
     /* Create an IPC buffer */
     err = alloc_map_frame(&cspace, PROCESS_IPC_BUFFER, user_process, seL4_AllRights);

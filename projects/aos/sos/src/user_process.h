@@ -5,6 +5,7 @@
 #include <sossharedapi/vfs.h>
 #include <sossharedapi/process.h>
 #include "recursive_mutex.h"
+#include "waitlist.h"
 
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
@@ -36,6 +37,11 @@ struct user_process
     vm_region_t *heap_region;
     vm_region_t *stack_region;
 
+    /** A linkedlist of notification cap whose worker thread is waiting on this user process to exit. 
+     *  On destruction of this process, all notification caps in this linkedlist will be signaled.
+    */
+    waitlist_t *waitlist;
+
     // filesystem
     /* main thread running the callback will assign a (struct nfsdir*) to this variable,
     so worker thread can use this*/
@@ -44,8 +50,10 @@ struct user_process
     vfs_t *vfs;
 };
 typedef struct user_process user_process_t;
+
 #define MAX_NUM_PROCESSES 16
 extern user_process_t *user_processes[MAX_NUM_PROCESSES];
+extern sync_recursive_mutex_t *user_processes_mutex;
 
 /*  Represents a PID that has been freed and the timestamp at which it became
     available for reuse. Entries of this type are stored in a queue so the

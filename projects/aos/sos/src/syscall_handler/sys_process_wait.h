@@ -1,0 +1,1 @@
+int handle_sos_process_wait();

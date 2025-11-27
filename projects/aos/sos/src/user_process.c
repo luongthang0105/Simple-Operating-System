@@ -4,24 +4,29 @@
 #include "cap_utils.h"
 #include <clock/clock.h>
 #include <sossharedapi/process.h>
+#include "waitlist.h"
 
 extern cspace_t cspace;
+sync_recursive_mutex_t *user_processes_mutex;
 
 user_process_t *user_processes[MAX_NUM_PROCESSES] = {NULL};
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t, arr, i, j, MAX_NUM_PROCESSES + 1);
 pid_queue_t free_pids = {.arr = {0}, .i = 0, .j = 0};
 
 int get_num_active_processes() {
+    sync_recursive_mutex_lock(user_processes_mutex);
     int num_active_processes = 0;
     for (pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
         if (user_processes[pid] != NULL) {
             num_active_processes += 1;
         }
     }
+    sync_recursive_mutex_unlock(user_processes_mutex);
     return num_active_processes;
 }
 
 void get_user_process_status(sos_process_t *processes, int num_active_processes) {
+    sync_recursive_mutex_lock(user_processes_mutex);
     int i = 0;
     pid_t pid = 0;
     while (i < num_active_processes && pid < MAX_NUM_PROCESSES) {
@@ -38,6 +43,7 @@ void get_user_process_status(sos_process_t *processes, int num_active_processes)
         }
         pid++;
     }
+    sync_recursive_mutex_unlock(user_processes_mutex);
 }
 
 void init_free_pids() {
@@ -55,10 +61,25 @@ int delete_user_process(int pid) {
     printf("delete user_process\n");
     if (pid < 0 || pid >= MAX_NUM_PROCESSES) return -1;
 
+    // Protects the destruction from other calls to delete_user_process with the same pid, or sos_process_wait with the same pid.
+    sync_recursive_mutex_lock(user_processes_mutex);
+    
     user_process_t *user_process = user_processes[pid];
-    if (user_process == NULL) return -1;
+    if (user_process == NULL) {
+        ZF_LOGE("It is either the process with given pid has been deleted, or there are no process with given pid.");
+        sync_recursive_mutex_unlock(user_processes_mutex);
+        return -1;
+    }
 
-    seL4_TCB_Suspend(user_process->tcb);
+    user_processes[pid] = NULL;
+
+    /* First, suspend the thread so our subsequent destruction steps don't cause any fault/unexpected behaviour. */
+    seL4_Error err = seL4_TCB_Suspend(user_process->tcb);
+    if (err != seL4_NoError) {
+        ZF_LOGE("Failed to suspend user process, seL4_Error=%d", err);
+        sync_recursive_mutex_unlock(user_processes_mutex);
+        return -1;
+    }
 
     /* vfs */
     destroy_vfs(user_process->vfs);
@@ -97,10 +118,19 @@ int delete_user_process(int pid) {
     cspace_destroy(&user_process->cspace);
     printf("delete cspace\n");
 
+    signal_then_destroy_caps(user_process->waitlist); // is it okay to be here, can we move it down?
+
+    /* free waitlist  */
+    free(user_process->waitlist);
+    printf("signals waiter and clean up\n");
+    
     free(user_process);
-    user_processes[pid] = NULL;
+
     current_thread->assigned_pid = -1;
+
     printf("free user process");
+    sync_recursive_mutex_unlock(user_processes_mutex);
+
     return 0;
 }
 
