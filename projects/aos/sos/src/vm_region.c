@@ -32,7 +32,7 @@ vm_region_t *add_vm_region(list_t *vm_regions, uintptr_t vaddr_base, size_t size
     region->size = size;
     region->rights = rights;
     region->grows_downward = grows_downward;
-    list_append(vm_regions, region);
+    list_prepend(vm_regions, region);
     return region;
 }
 
