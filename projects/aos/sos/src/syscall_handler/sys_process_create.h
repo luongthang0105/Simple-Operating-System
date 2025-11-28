@@ -3,7 +3,7 @@
 #include <sel4/shared_types_gen.h>
 #include <stdbool.h>
 #include <elf/elf.h>
-#include "../user_process.h"
+#include "../threads.h"
 
 int handle_sos_process_create();
 
@@ -16,6 +16,6 @@ int handle_sos_process_create();
  * @param 
  * @returns
  */
-bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, 
+bool create_process(sos_thread_t *assigned_worker_thread, char *app_name, pid_t pid, elf_t* elf_file, 
                     struct nfsfh* elf_fh);
 

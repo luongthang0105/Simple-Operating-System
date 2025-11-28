@@ -6,7 +6,7 @@
 #include "debugger.h"
 #endif /* CONFIG_SOS_GDB_ENABLED */
 
-seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_CPtr worker_thread_ntfn, const char *thread_name) {
+seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, const char *thread_name) {
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 1);
     int ret = -1; /* by default, the return value from fault handler equals -1, so we don't reply to fault that hasn't been handled */
     seL4_Fault_t fault = seL4_getFault(tag);
@@ -16,7 +16,7 @@ seL4_MessageInfo_t handle_fault(seL4_MessageInfo_t tag, bool *have_reply, seL4_C
 
     switch (fault_type) {
         case seL4_Fault_VMFault:
-            ret = handle_vm_fault(fault, worker_thread_ntfn);
+            ret = handle_vm_fault(fault);
             break;
         default:
             /* some kind of fault */

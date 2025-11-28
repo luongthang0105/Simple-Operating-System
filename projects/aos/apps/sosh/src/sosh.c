@@ -114,7 +114,7 @@ static int cp(int argc, char **argv)
     return 0;
 }
 
-#define MAX_PROCESSES 10
+#define MAX_PROCESSES 16
 
 static int ps(int argc, char **argv)
 {
@@ -268,7 +268,8 @@ static int kill(int argc, char *argv[])
     }
 
     pid = atoi(argv[1]);
-    return sos_process_delete(pid);
+    int ret = sos_process_delete(pid);
+    printf("ret kill = %d\n", ret);
 }
 
 static int benchmark(int argc, char *argv[])

@@ -52,6 +52,7 @@ sos_thread_t *get_available_worker_thread() {
     for (int i = 0; i < MAX_WORKER_THREADS; ++i) {
         if (worker_threads[i]->assigned_pid == -1) {
             worker_thread = worker_threads[i];
+            break;
         }
     }
     sync_recursive_mutex_unlock(worker_threads_mutex);
@@ -107,12 +108,31 @@ static void thread_trampoline(sos_thread_t *thread, thread_main_f *function, voi
 #endif /* CONFIG_SOS_GDB_ENABLED */
     thread_suspend(thread);
 }
+
+void worker_thread_rerun(sos_thread_t *thread) {
+    seL4_Error err = seL4_TCB_Suspend(thread->tcb);
+    ZF_LOGF_IF(err != seL4_NoError, "Failed to suspend worker thread, seL4_Error=%d", err);
+
+    seL4_UserContext context = {
+        .pc = (seL4_Word) thread_trampoline,
+        .sp = thread->base_stack_ptr,
+        .x0 = (seL4_Word) thread,
+        .x1 = (seL4_Word) syscall_loop,
+        .x2 = (seL4_Word) thread->start_func_arg,
+        .x3 = (seL4_Word) thread->debugger_add
+    };
+
+    err = seL4_TCB_WriteRegisters(thread->tcb, true, 0, sizeof(context) / sizeof(seL4_Word), &context);
+    
+    ZF_LOGF_IF(err != seL4_NoError, "Failed to write registers to TCB, seL4_Error=%d", err);
+}
+
 /*
  * Spawn a new kernel (SOS) thread to execute function with arg
  *
  * TODO: fix memory leaks
  */
-sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg, seL4_Word badge, bool resume,
+sos_thread_t *thread_create(tid_t thread_id, thread_main_f function, void *arg, seL4_Word badge, bool resume,
                             seL4_Word prio, seL4_CPtr bound_ntfn, bool debugger_add)
 {
     /* we allocate stack for additional sos threads
@@ -169,6 +189,12 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
                                              seL4_EndpointObject, seL4_EndpointBits);
     if (new_thread->ipc_ep_ut == NULL) {
         ZF_LOGE("Failed to alloc ipc ep ut");
+        return NULL;
+    }
+
+    new_thread->reply_ut = alloc_retype(&new_thread->reply, seL4_ReplyObject, seL4_ReplyBits);
+    if (new_thread->reply_ut == NULL) {
+        ZF_LOGE("Failed to alloc reply ut");
         return NULL;
     }
 
@@ -268,10 +294,14 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
     NAME_THREAD(new_thread->tcb, thread_name);
 
     /* set up the stack */
-    seL4_Word sp;
-    if (!alloc_stack(&sp)) {
+    if (!alloc_stack(&new_thread->base_stack_ptr)) {
         return NULL;
     }
+
+    /* saves data for calling `rerun_thread` later */
+    new_thread->start_func = function;
+    new_thread->start_func_arg = arg;
+    new_thread->debugger_add = debugger_add;
 
     /* Map in the IPC buffer for the thread */
     err = map_frame(&cspace, new_thread->ipc_buffer, seL4_CapInitThreadVSpace, curr_ipc_buf,
@@ -286,7 +316,7 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
     /* set initial context */
     seL4_UserContext context = {
         .pc = (seL4_Word) thread_trampoline,
-        .sp = sp,
+        .sp = new_thread->base_stack_ptr,
         .x0 = (seL4_Word) new_thread,
         .x1 = (seL4_Word) function,
         .x2 = (seL4_Word) arg,
@@ -315,7 +345,7 @@ sos_thread_t *thread_create(size_t thread_id, thread_main_f function, void *arg,
 /*
  * Spawn the debugger thread. Should only be called once in debugger_init()
  */
-sos_thread_t *debugger_spawn(size_t thread_id, thread_main_f function, void *arg, seL4_Word badge, seL4_CPtr bound_ntfn)
+sos_thread_t *debugger_spawn(tid_t thread_id, thread_main_f function, void *arg, seL4_Word badge, seL4_CPtr bound_ntfn)
 {
     return thread_create(thread_id, function, arg, badge, true, seL4_MaxPrio, bound_ntfn, false);
 }
@@ -330,7 +360,7 @@ sos_thread_t *debugger_spawn(size_t thread_id, thread_main_f function, void *arg
  * Ensure that the badge you provide is unique (in that no other active thread has it). If you
  * do not ensure this, you will probably see some weird behaviour in GDB.
  */
-sos_thread_t *spawn( size_t thread_id, thread_main_f function, void *arg, seL4_Word badge, bool debugger_add)
+sos_thread_t *spawn(tid_t thread_id, thread_main_f function, void *arg, seL4_Word badge, bool debugger_add)
 {
     return thread_create(thread_id, function, arg, badge, true, SOS_THREAD_PRIORITY, 0, debugger_add);
 }

@@ -22,7 +22,7 @@ int init_waitlist(waitlist_t **out_waitlist);
  * 
  * @returns 0 on success, -1 otherwise.
  */
-int add_waiter(waitlist_t *waitlist, seL4_CPtr src_ntfn);
+int add_waiter(waitlist_t *waitlist, seL4_CPtr ipc_ep);
 
 /** Signals all the ntfns currently waiting on the user process to exit.
  *  It also destroy the waitlist, hence later calls to `add_waiter` is denied.

@@ -116,7 +116,10 @@ static int read_elf_header(struct nfsfh* elf_fh, unsigned char** elf_header_data
  * @returns 0 on success, -1 otherwise.
  */
 static int close_elf(struct nfsfh* fh) {
-    nfs_close_cb_args_t args = {.thread_index = current_thread->thread_id};
+    nfs_close_cb_args_t args = {
+        .thread_index = current_thread->thread_id,
+        .expected_pid = current_thread->assigned_pid
+    };
     struct nfs_context *nfs_context = get_nfs_context();
 
     int ret = nfs_close_async(nfs_context, fh, nfs_close_cb, (void *)&args);
@@ -140,6 +143,7 @@ static int get_elf_stat(const char* path, sos_stat_t* elf_stat) {
     struct nfs_context *nfs_context = get_nfs_context();
     nfs_stat_cb_args_t private_data = {
         .thread_index = current_thread->thread_id,
+        .expected_pid = current_thread->assigned_pid,
         .status = 0
     };
 
@@ -362,7 +366,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
     return stack_top;
 }
 
-bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, struct nfsfh* elf_fh) 
+bool create_process(sos_thread_t* assigned_worker_thread, char *app_name, pid_t pid, elf_t* elf_file, struct nfsfh* elf_fh) 
 {
     user_processes[pid] = malloc(sizeof(user_process_t));    
     ZF_LOGF_IF(!user_processes[pid], "Failed to malloc user_process_t for pid=%u", pid);
@@ -445,9 +449,9 @@ bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, st
     /* now mutate the cap, thereby setting the badge */
     // TODO: consider if it is necessary to set the badge here.
     if (elf_fh) {
-        err = cspace_mint(&user_process->cspace, user_process->user_ep, &cspace, ep, seL4_AllRights, 0);
+        err = cspace_mint(&user_process->cspace, user_process->user_ep, &cspace, assigned_worker_thread->ipc_ep, seL4_AllRights, 0);
     } else { /* elf_fh == NULL means this is loading the initial user process, hence set the badge */
-        err = cspace_mint(&user_process->cspace, user_process->user_ep, &cspace, ep, seL4_AllRights, APP_EP_BADGE);
+        err = cspace_mint(&user_process->cspace, user_process->user_ep, &cspace, assigned_worker_thread->ipc_ep, seL4_AllRights, APP_EP_BADGE);
     }
 
     if (err) {
@@ -491,7 +495,7 @@ bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, st
      * NOTE this will use the unbadged ep unlike above, you might want to mint it with a badge
      * so you can identify which thread faulted in your fault handler */
     err = seL4_TCB_SetSchedParams(user_process->tcb, seL4_CapInitThreadTCB, seL4_MinPrio, APP_PRIORITY,
-                                  user_process->sched_context, ep);
+                                  user_process->sched_context, assigned_worker_thread->ipc_ep);
     if (err != seL4_NoError) {
         ZF_LOGE("Unable to set scheduling params, seL4_Error = %d\n", err);
         return false;
@@ -522,7 +526,8 @@ bool create_process(char *app_name, seL4_CPtr ep, pid_t pid, elf_t* elf_file, st
 
     strncpy(user_process->command, app_name, N_NAME);
     user_process->stime = get_time() / 1000;
-    
+    user_process->assigned_worker_thread_id = assigned_worker_thread->thread_id;
+
     printf("Starting %s at %p\n", app_name, (void *) context.pc);
     err = seL4_TCB_WriteRegisters(user_process->tcb, true, 0, sizeof(context) / sizeof(seL4_Word), &context);
     ZF_LOGE_IF(err, "Failed to write registers");
@@ -609,7 +614,7 @@ int handle_sos_process_create() {
         return -1;
     }
 
-    if (!create_process(path, worker_thread->ipc_ep, pid, &elf_file, elf_fh)) {
+    if (!create_process(worker_thread, path, pid, &elf_file, elf_fh)) {
         ZF_LOGE("Failed to create a new process");
 
         free(path);
@@ -617,6 +622,34 @@ int handle_sos_process_create() {
         close_elf(elf_fh);
 
         // TODO: clean up the user process.....
+        user_process_t *user_process = user_processes[pid];
+
+        // vfs
+        free(user_process->vfs);
+
+        // pgd
+        free(user_process->page_global_directory);
+        destroy_pgd(user_process->page_global_directory, &cspace, user_process->vspace);
+        // vm regions
+        free(user_process->vm_regions);
+        
+        // waitlist
+        free(user_process->waitlist->ntfns);
+        free(user_process->waitlist);
+
+        // tcb
+        free_cap(user_process->tcb_ut, user_process->tcb);
+
+        // sche dcontext
+        free_cap(user_process->sched_context_ut, user_process->sched_context);
+
+        // vspace
+        free_cap(user_process->vspace_ut, user_process->vspace);
+        
+        // cspace
+        cspace_destroy(&user_process->cspace);
+
+        free(user_process);
         return -1;
     }
 

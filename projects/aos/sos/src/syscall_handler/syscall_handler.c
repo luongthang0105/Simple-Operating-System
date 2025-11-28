@@ -14,10 +14,15 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     *have_reply = true;
 
     int64_t ret = -1;
-
+    printf("receives syscall number = %d\n", syscall_number);
     /* Process system call */
     switch (syscall_number)
     {
+    case SYSCALL_NULL_OPS: // intentionally ignores the syscall
+        ZF_LOGV("syscall: null ops !\n");
+        *have_reply = false;
+        ret = 0;
+        break;
     case SYSCALL_SOS_OPEN:
         ret = handle_sos_open();
         break;

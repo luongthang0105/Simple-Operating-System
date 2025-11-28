@@ -95,7 +95,7 @@ seL4_CPtr sched_ctrl_end;
 
 struct syscall_loop_args {
     seL4_CPtr ep;
-    int thread_index;
+    seL4_CPtr reply;
 };
 
 struct network_console *network_console;
@@ -113,15 +113,8 @@ void write_to_buf(UNUSED struct network_console *network_console, char c) {
 
 NORETURN void syscall_loop(void* arg)
 {
-    seL4_CPtr reply;    
+    seL4_CPtr reply = ((struct syscall_loop_args*)arg)->reply;    
     seL4_CPtr ep = ((struct syscall_loop_args*)arg)->ep;
-    int thread_index = ((struct syscall_loop_args*)arg)->thread_index;
-
-    /* Create reply object */
-    ut_t *reply_ut = alloc_retype(&reply, seL4_ReplyObject, seL4_ReplyBits);
-    if (reply_ut == NULL) {
-        ZF_LOGF("Failed to alloc reply object ut");
-    }
 
     bool have_reply = false;
     seL4_MessageInfo_t reply_msg = seL4_MessageInfo_new(0, 0, 0, 0);
@@ -149,12 +142,12 @@ NORETURN void syscall_loop(void* arg)
             reply_msg = handle_syscall(badge, seL4_MessageInfo_get_length(message) - 1, &have_reply);
         } else {
             /* Handle the fault */
-            reply_msg = handle_fault(message, &have_reply, worker_threads[thread_index]->ntfn, user_processes[current_thread->assigned_pid]->command);
+            reply_msg = handle_fault(message, &have_reply, user_processes[current_thread->assigned_pid]->command);
         }
     }
 }
 
-bool start_first_process(char *app_name, seL4_CPtr ep, pid_t pid)
+bool start_first_process(sos_thread_t *assigned_worker_thread, char *app_name, seL4_CPtr ep)
 {    
     elf_t elf_file = {};
     /* parse the cpio image */
@@ -172,7 +165,7 @@ bool start_first_process(char *app_name, seL4_CPtr ep, pid_t pid)
         return false;
     }
 
-    return create_process(app_name, ep, pid, &elf_file, false);
+    return create_process(assigned_worker_thread, app_name, assigned_worker_thread->assigned_pid, &elf_file, false);
 }
 
 /* Allocate an endpoint and a notification object for sos.
@@ -264,7 +257,7 @@ void start_first_process_then_loop(void *arg) {
     struct syscall_loop_args *args = arg;
     /* Start user process */
     printf("Start first process\n");
-    bool success = start_first_process(APP_NAME, args->ep, worker_threads[0]->assigned_pid);
+    bool success = start_first_process(worker_threads[SOS_BOOTSTRAP_THREAD_ID], APP_NAME, args->ep);
     ZF_LOGF_IF(!success, "Failed to start first process");
     syscall_loop(arg);
 }
@@ -282,7 +275,7 @@ sos_thread_t* create_worker_thread(size_t thread_id, thread_main_f *function, bo
 
     /* worker thread's IPC EP is created within the `thread_create` function */
     worker_sys_loop_args->ep = thread->ipc_ep;
-    worker_sys_loop_args->thread_index = thread_id;
+    worker_sys_loop_args->reply = thread->reply;
 
     /* start execution */
     if (start_execution) {
@@ -386,7 +379,10 @@ NORETURN void *main_continued(UNUSED void *arg)
     sync_recursive_mutex_new(worker_threads_mutex);
     
     /* Create a worker thread for handling interrupts */
-    struct syscall_loop_args interrupts_handler_args = { .ep = ipc_ep, .thread_index = -1 };
+    seL4_CPtr interrupt_thread_reply;
+    create_cap(&interrupt_thread_reply, seL4_ReplyObject, seL4_ReplyBits);
+
+    struct syscall_loop_args interrupts_handler_args = { .ep = ipc_ep, .reply = interrupt_thread_reply };
     
     // unbinds ntfn from init thread TCB, because we're going to bind ntfn to the interrupts handler thread
     seL4_Error err = seL4_TCB_UnbindNotification(seL4_CapInitThreadTCB);
@@ -414,7 +410,11 @@ NORETURN void *main_continued(UNUSED void *arg)
     /* Enter the syscall loop on the main thread to keep SOS running */
     seL4_CPtr main_thread_ipc_ep;
     create_cap(&main_thread_ipc_ep, seL4_EndpointObject, seL4_EndpointBits);
-    struct syscall_loop_args main_thread_args = { .ep = main_thread_ipc_ep, .thread_index = -1 };
+    
+    seL4_CPtr main_thread_reply;
+    create_cap(&main_thread_reply, seL4_ReplyObject, seL4_ReplyBits);
+    
+    struct syscall_loop_args main_thread_args = { .ep = main_thread_ipc_ep, .reply = main_thread_reply };
     syscall_loop(&main_thread_args);
 }
 /*

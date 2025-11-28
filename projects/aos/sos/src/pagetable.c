@@ -83,24 +83,24 @@ static seL4_Error unmap_page_object(
     return seL4_NoError;
 }
 
-void destroy_pgd(pgd_t *pgd, cspace_t *cspace) {
+void destroy_pgd(pgd_t *pgd, cspace_t *cspace, seL4_CPtr vspace) {
     if (pgd == NULL) return;
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
-        destroy_pud(pgd->page_upper_directories[i], cspace); 
+        destroy_pud(pgd->page_upper_directories[i], cspace, vspace); 
         pgd->page_upper_directories[i] = NULL;
     }
 
     free(pgd);
 }
 
-void destroy_pud(pud_t *pud, cspace_t *cspace) {
+void destroy_pud(pud_t *pud, cspace_t *cspace, seL4_CPtr vspace) {
     if (pud == NULL) return;
 
     printf("destroy pud\n");
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
-        destroy_pd(pud->page_directories[i], cspace);
+        destroy_pd(pud->page_directories[i], cspace, vspace);
         pud->page_directories[i] = NULL;
     }
 
@@ -109,13 +109,13 @@ void destroy_pud(pud_t *pud, cspace_t *cspace) {
 
 }
 
-void destroy_pd(pd_t *pd, cspace_t *cspace) {
+void destroy_pd(pd_t *pd, cspace_t *cspace, seL4_CPtr vspace) {
     if (pd == NULL) return;
 
     printf("destroy pd\n");
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
-        destroy_pt(pd->page_tables[i], cspace);
+        destroy_pt(pd->page_tables[i], cspace, vspace);
         pd->page_tables[i] = NULL;
     }
 
@@ -124,13 +124,13 @@ void destroy_pd(pd_t *pd, cspace_t *cspace) {
 
 }
 
-void destroy_pt(pt_t *pt, cspace_t *cspace) {
+void destroy_pt(pt_t *pt, cspace_t *cspace, seL4_CPtr vspace) {
     if (pt == NULL) return;
 
     printf("destroy pt\n");
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
-        destroy_page(pt->page_metadatas[i], cspace);
+        destroy_page(pt->page_metadatas[i], cspace, vspace);
         pt->page_metadatas[i] = NULL;
     }
     // TODO: check for failure for these unmap_page_object calls, maybe ZF_LOGF when crash
@@ -139,14 +139,14 @@ void destroy_pt(pt_t *pt, cspace_t *cspace) {
 
 }
 
-void destroy_page(page_metadata_t *page, cspace_t *cspace) {
+void destroy_page(page_metadata_t *page, cspace_t *cspace, seL4_CPtr vspace) {
     if (page == NULL) return;
 
     sync_recursive_mutex_lock(in_memory_pages_mutex); // locks this to make sure the swapped page is not evicted before it deallocs.
 
     seL4_Error err;
     if (page->pagefile_offset != -1) { /* page is currently on the disk */
-        err = swap_to_mem(page);
+        err = swap_to_mem(page, vspace);
         ZF_LOGF_IF(err != seL4_NoError, "Failed to swap the page to memory, seL4_Error = %d\n", err);
     }
 
@@ -380,7 +380,7 @@ page_metadata_t *find_page(uintptr_t vaddr, pgd_t *pgd) {
 
     if (page != NULL) { /* page is either on disk or in memory */
         if (page->pagefile_offset != -1) {   /* page is on disk */
-            ret = swap_to_mem(page);
+            ret = swap_to_mem(page, user_process->vspace);
         } 
         else { /* page is still in memory. */
             if (page->reference_bit == 0) {

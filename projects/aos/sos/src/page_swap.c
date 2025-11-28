@@ -74,7 +74,7 @@ static void write_to_pagefile(page_metadata_t *page_metadata);
 static size_t free_pagefile_offsets_pop();
 static void free_pagefile_offsets_add(size_t new_offset);
 
-int swap_to_mem(page_metadata_t *page) {   
+int swap_to_mem(page_metadata_t *page, seL4_CPtr vspace) {   
     sync_recursive_mutex_lock(in_memory_pages_mutex);
 
     frame_ref_t frame_ref = alloc_frame();
@@ -118,7 +118,7 @@ int swap_to_mem(page_metadata_t *page) {
     page->reference_bit = 1;
     page->pagefile_offset = -1;
 
-    err = reference_page(page, get_current_user_process()->vspace, page->aligned_vaddr, page->rights);
+    err = reference_page(page, vspace, page->aligned_vaddr, page->rights);
     if (err != seL4_NoError) {
         cspace_free_slot(&cspace, frame_cptr);
         free_frame(frame_ref);

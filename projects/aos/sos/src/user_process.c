@@ -1,22 +1,32 @@
 #include "user_process.h"
 #include "pagetable.h"
-#include "threads.h"
 #include "cap_utils.h"
 #include <clock/clock.h>
 #include <sossharedapi/process.h>
 #include "waitlist.h"
+#include "threads.h"
 
 extern cspace_t cspace;
 sync_recursive_mutex_t *user_processes_mutex;
 
-user_process_t *user_processes[MAX_NUM_PROCESSES] = {NULL};
-SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t, arr, i, j, MAX_NUM_PROCESSES + 1);
+user_process_t *user_processes[PROCESSES_POOL_SZ] = {NULL};
+SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t, arr, i, j, PROCESSES_POOL_SZ + 1);
 pid_queue_t free_pids = {.arr = {0}, .i = 0, .j = 0};
 
+sos_thread_t *get_assigned_worker_thread(user_process_t *user_process) {
+    tid_t thread_id = user_process->assigned_worker_thread_id;
+
+    if (thread_id < 0 || thread_id > MAX_WORKER_THREADS) {
+        ZF_LOGE("Invalid thread id = %d\n", thread_id);
+        return NULL;
+    }
+
+    return worker_threads[thread_id];
+}
 int get_num_active_processes() {
     sync_recursive_mutex_lock(user_processes_mutex);
     int num_active_processes = 0;
-    for (pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
+    for (pid_t pid = 0; pid < PROCESSES_POOL_SZ; pid++) {
         if (user_processes[pid] != NULL) {
             num_active_processes += 1;
         }
@@ -29,7 +39,7 @@ void get_user_process_status(sos_process_t *processes, int num_active_processes)
     sync_recursive_mutex_lock(user_processes_mutex);
     int i = 0;
     pid_t pid = 0;
-    while (i < num_active_processes && pid < MAX_NUM_PROCESSES) {
+    while (i < num_active_processes && pid < PROCESSES_POOL_SZ) {
         user_process_t *current_process = user_processes[pid];
         if (current_process != NULL) {
             sos_process_t sos_process_status = { 
@@ -47,7 +57,7 @@ void get_user_process_status(sos_process_t *processes, int num_active_processes)
 }
 
 void init_free_pids() {
-    for (pid_t pid = 0; pid < MAX_NUM_PROCESSES; pid++) {
+    for (pid_t pid = 0; pid < PROCESSES_POOL_SZ; pid++) {
         /*  let timestamp be 0 initially, so that it would always be available to use at first. */
         pid_free_record_t record = { .pid = pid, .freed_timestamp = 0 };
         sglib_pid_queue_t_add(&free_pids, record);
@@ -59,7 +69,7 @@ void init_free_pids() {
 
 int delete_user_process(int pid) {
     printf("delete user_process\n");
-    if (pid < 0 || pid >= MAX_NUM_PROCESSES) return -1;
+    if (pid < 0 || pid >= PROCESSES_POOL_SZ) return -1;
 
     // Protects the destruction from other calls to delete_user_process with the same pid, or sos_process_wait with the same pid.
     sync_recursive_mutex_lock(user_processes_mutex);
@@ -76,18 +86,14 @@ int delete_user_process(int pid) {
      *  hence causing unexpected behaviors.
     */
     seL4_Error err = seL4_TCB_Suspend(user_process->tcb);
-    if (err != seL4_NoError) {
-        ZF_LOGE("Failed to suspend user process, seL4_Error=%d", err);
-        sync_recursive_mutex_unlock(user_processes_mutex);
-        return -1;
-    }
+    ZF_LOGF_IF(err != seL4_NoError, "Failed to suspend user process, seL4_Error=%d", err);
 
     /* vfs */
     destroy_vfs(user_process->vfs);
     printf("delete vfs\n");
 
     /* linked list of frames - page global directory  */
-    destroy_pgd(user_process->page_global_directory, &cspace);
+    destroy_pgd(user_process->page_global_directory, &cspace, user_process->vspace);
     printf("delete pgd\n");
 
     /* vm_regions */
@@ -96,8 +102,13 @@ int delete_user_process(int pid) {
 
     /* IPC buffer has already been freed from `destroy_pgd`. */ 
 
-    /* user_ep */
-    free_cap(NULL, user_process->user_ep);
+    /* user_ep. Does not use free_cap function here because it assumes the cap is allocated by root cspace.
+       Whereas user_ep is allocated by user_process cspace. */
+    seL4_Error del_error = cspace_delete(&user_process->cspace, user_process->user_ep);
+    if (del_error != seL4_NoError) {
+        ZF_LOGF("Failed to delete cap, seL4_Error = %d", del_error);
+    }
+    cspace_free_slot(&user_process->cspace, user_process->user_ep);
     printf("delete user_ep");
 
     /* TCB object */
@@ -105,11 +116,6 @@ int delete_user_process(int pid) {
     printf("delete tcb\n");
 
     /* stack has already been freed from `destroy_pgd`. */
-
-    /* add the pid back to the free_pids queue to reuse it */
-    pid_free_record_t pid_free_record = { .pid = pid, .freed_timestamp = get_time()};
-    sglib_pid_queue_t_add(&free_pids, pid_free_record);
-    printf("reuse pid\n");
 
     /* vspace */
     free_cap(user_process->vspace_ut, user_process->vspace);
@@ -119,16 +125,25 @@ int delete_user_process(int pid) {
     cspace_destroy(&user_process->cspace);
     printf("delete cspace\n");
 
-    signal_then_destroy_caps(user_process->waitlist); // is it okay to be here, can we move it down?
+    signal_then_destroy_caps(user_process->waitlist);
 
     /* free waitlist  */
     free(user_process->waitlist);
     printf("signals waiter and clean up\n");
     
+    sos_thread_t *assigned_worker_thread = get_assigned_worker_thread(user_process);
+    assigned_worker_thread->assigned_pid = -1;
+
+    if (assigned_worker_thread != current_thread) { /* suspend the worker thread and get it back to syscall loop */
+        worker_thread_rerun(assigned_worker_thread);
+    }
+
     free(user_process);
     user_processes[pid] = NULL;
 
-    current_thread->assigned_pid = -1;
+    /* add the pid back to the free_pids queue to reuse it */
+    pid_free_record_t pid_free_record = { .pid = pid, .freed_timestamp = get_time()};
+    sglib_pid_queue_t_add(&free_pids, pid_free_record);
 
     printf("free user process");
     sync_recursive_mutex_unlock(user_processes_mutex);
@@ -159,7 +174,7 @@ int get_available_pid() {
             sglib_pid_queue_t_add(&free_pids, record);
         }
     }
-    
+
     sync_recursive_mutex_unlock(free_pids_mutex);
     return result;
 }

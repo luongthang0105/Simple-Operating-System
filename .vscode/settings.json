@@ -76,6 +76,7 @@
         "sched_ctrl.h": "c",
         "user_app.h": "c",
         "nfs_wrapper.h": "c",
-        "waitlist.h": "c"
+        "waitlist.h": "c",
+        "recursive_mutex.h": "c"
     }
 }

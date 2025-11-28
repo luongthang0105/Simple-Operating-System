@@ -9,7 +9,7 @@ int handle_sos_process_wait() {
     sync_recursive_mutex_lock(user_processes_mutex);
     if (pid_to_wait == -1) {
         /* choose a live process */
-        for (int pid = 0; pid < MAX_NUM_PROCESSES; ++pid) {
+        for (int pid = 0; pid < PROCESSES_POOL_SZ; ++pid) {
             if (pid != current_thread->assigned_pid && user_processes[pid] != NULL) {
                 pid_to_wait = pid;
                 break;
@@ -27,19 +27,14 @@ int handle_sos_process_wait() {
     }
 
     /* gets the waitlist */
-    seL4_CPtr ntfn;
-    ut_t *ut = create_cap(&ntfn, seL4_NotificationObject, seL4_NotificationBits);
 
-    if (add_waiter(user_processes[pid_to_wait]->waitlist, ntfn)) {
-        free_cap(ut, ntfn);
+    if (add_waiter(user_processes[pid_to_wait]->waitlist, current_thread->ipc_ep)) {
         sync_recursive_mutex_unlock(user_processes_mutex);
         return -1;
     }
 
     sync_recursive_mutex_unlock(user_processes_mutex);
-    seL4_Wait(ntfn, NULL);
-
-    free_cap(ut, ntfn);
+    seL4_Wait(current_thread->ipc_ep, NULL);
 
     return pid_to_wait;
 }

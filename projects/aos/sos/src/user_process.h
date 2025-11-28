@@ -7,10 +7,12 @@
 #include "recursive_mutex.h"
 #include "waitlist.h"
 
+typedef uint32_t tid_t;
 struct page_global_directory;
 typedef struct page_global_directory pgd_t;
 struct user_process
 {   
+    tid_t assigned_worker_thread_id;
     unsigned  size;            /* in pages */
     unsigned  stime;           /* start time in msec since booting */
     char      command[N_NAME]; /* Name of executable */
@@ -52,7 +54,8 @@ struct user_process
 typedef struct user_process user_process_t;
 
 #define MAX_NUM_PROCESSES 16
-extern user_process_t *user_processes[MAX_NUM_PROCESSES];
+#define PROCESSES_POOL_SZ (MAX_NUM_PROCESSES * 2)
+extern user_process_t *user_processes[PROCESSES_POOL_SZ];
 extern sync_recursive_mutex_t *user_processes_mutex;
 
 /*  Represents a PID that has been freed and the timestamp at which it became
@@ -72,7 +75,7 @@ typedef struct
 */
 typedef struct pid_queue
 {
-    pid_free_record_t arr[MAX_NUM_PROCESSES + 1];
+    pid_free_record_t arr[PROCESSES_POOL_SZ + 1];
     size_t i;
     size_t j;
 } pid_queue_t;

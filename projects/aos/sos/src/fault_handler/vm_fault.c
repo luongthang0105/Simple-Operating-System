@@ -4,7 +4,7 @@
 
 extern cspace_t cspace;
 
-int handle_vm_fault(seL4_Fault_t fault, seL4_CPtr worker_thread_ntfn) {
+int handle_vm_fault(seL4_Fault_t fault) {
     uintptr_t original_faultadrr = seL4_Fault_VMFault_get_Addr(fault);
     seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
 

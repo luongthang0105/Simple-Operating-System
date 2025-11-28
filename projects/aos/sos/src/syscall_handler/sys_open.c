@@ -54,8 +54,11 @@ int handle_sos_open_nwcs(fmode_t mode)
     {
     case O_RDONLY:
     case O_RDWR:
-        if (has_reader)
+        if (has_reader) {
+            ZF_LOGE("There should only be one nwcs reader\n");
             return -1; // only allow one nwcs reader
+        }
+        console->mode = O_RDWR;
         update_nwcs_reader(current_thread->thread_id);
         returned_fd = STDIN_FD;
         user_process->vfs->fd_table[STDIN_FD].is_opened = true;

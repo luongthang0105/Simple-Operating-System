@@ -5,7 +5,7 @@
 /* The queue would contain (`PAGES_QUEUE_MAX_SIZE - 1`) pages only, because of the `SGLIB_QUEUE` being a ring buffer (so it keeps 1 slot to identify fullness of the queue). 
 However, it is okay because we do not store frame 0 (the sentinel NULL frame). */
 #define PAGES_QUEUE_MAX_SIZE    ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : CONFIG_SOS_FRAME_LIMIT * 10) 
-#define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 150))
+#define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 1500))
 #else
 #define PAGES_QUEUE_MAX_SIZE (1 << 19)
 #define OFFSET_QUEUE_MAX_SIZE (1 << 19)
@@ -36,8 +36,6 @@ extern bool has_init_page_swap;
 extern sync_recursive_mutex_t *in_memory_pages_mutex;
 extern pages_queue_t in_memory_pages;
 
-void destroy_page(page_metadata_t *page, cspace_t *cspace);
-
 /*  If current queue is full, evict a page from its allocated frame using the second-chance replacement policy.
     Otherwise, do nothing. After calling `evict_page()`, it is guaranteed that there is at least one free frame in the frame table.
 */
@@ -52,7 +50,7 @@ void evict_page();
  *  @param page   page that is about to be swapped from disk to memory 
  *  @return 0 on success.
  */
-int swap_to_mem(page_metadata_t *page);
+int swap_to_mem(page_metadata_t *page, seL4_CPtr vspace);
 
 void in_memory_pages_add(page_metadata_t *page);
 
