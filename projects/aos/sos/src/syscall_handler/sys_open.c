@@ -47,9 +47,9 @@ int handle_sos_open_nwcs(fmode_t mode)
     int returned_fd = CONSOLE_FD;
     user_process_t *user_process = get_current_user_process();
 
-    sos_fd_t *console = &user_process->vfs->fd_table[CONSOLE_FD];
-
-    bool has_reader = (console->mode == O_RDONLY || console->mode == O_RDWR || get_nwcs_reader_value() != -1);
+    // The nwcs reader is considered to be acquired when another thread has used it.
+    int curr_nwcs_reader = get_nwcs_reader_value();
+    bool has_reader = (curr_nwcs_reader != -1 && curr_nwcs_reader != current_thread->thread_id);
     switch (mode)
     {
     case O_RDONLY:
@@ -58,13 +58,12 @@ int handle_sos_open_nwcs(fmode_t mode)
             ZF_LOGE("There should only be one nwcs reader\n");
             return -1; // only allow one nwcs reader
         }
-        console->mode = O_RDWR;
         update_nwcs_reader(current_thread->thread_id);
         returned_fd = STDIN_FD;
         user_process->vfs->fd_table[STDIN_FD].is_opened = true;
         break;
     case O_WRONLY:
-        console->mode = has_reader ? O_RDWR : O_WRONLY;
+        returned_fd = CONSOLE_FD;
         break;
     }
     return returned_fd;
@@ -74,14 +73,13 @@ int handle_sos_open_stdin(fmode_t mode) {
         return -1;
 
     user_process_t *user_process = get_current_user_process();
-    sos_fd_t *console = &user_process->vfs->fd_table[CONSOLE_FD];
 
-    bool has_reader = (console->mode == O_RDONLY || console->mode == O_RDWR || nwcs_reader != -1);
+    int curr_nwcs_reader = get_nwcs_reader_value();
+    bool has_reader = (curr_nwcs_reader != -1 && curr_nwcs_reader != current_thread->thread_id);
     
     if (has_reader)
         return -1; // only allow one nwcs reader
 
-    console->mode = O_RDWR;
     update_nwcs_reader(current_thread->thread_id);
     user_process->vfs->fd_table[STDIN_FD].is_opened = true;
     return STDIN_FD;
