@@ -67,15 +67,38 @@ long sys_mmap(va_list ap)
     int fd = va_arg(ap, int);
     off_t offset = va_arg(ap, off_t);
 
-    if (flags & MAP_ANONYMOUS) {
-        /* Check that we don't try and allocate more than exists */
-        if (length > morecore_top - morecore_base) {
-            return -ENOMEM;
-        }
-        /* Steal from the top */
-        morecore_top -= length;
-        return morecore_top;
+    if (!(flags & MAP_ANONYMOUS)) {
+        ZF_LOGF("not implemented");
+        return -ENOMEM;
     }
-    ZF_LOGF("not implemented");
-    return -ENOMEM;
+
+    if (fd != -1) {
+        ZF_LOGF("Not supporting map file pages");
+        return -ENOMEM;
+    }
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 4);
+    seL4_SetMR(0, SYSCALL_SOS_MMAP); 
+    seL4_SetMR(1, addr);
+    seL4_SetMR(2, length);
+    seL4_SetMR(3, prot);
+
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return (long)seL4_GetMR(0);
+}
+
+int sys_munmap(va_list ap)
+{
+    void *addr = va_arg(ap, void *);
+    size_t length = va_arg(ap, size_t);
+
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 3);
+    seL4_SetMR(0, SYSCALL_SOS_MUNMAP); 
+    seL4_SetMR(1, addr);
+    seL4_SetMR(2, length);
+
+    seL4_Call(SOS_IPC_EP_CAP, tag);
+
+    return seL4_GetMR(0);
 }

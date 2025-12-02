@@ -13,6 +13,8 @@
 #include "sys_process_wait.h"
 #include "sys_process_status.h"
 #include "sys_my_id.h"
+#include "sys_mmap.h"
+#include "sys_munmap.h"
 #include <utils/attribute.h>
 #include <sel4/functions.h>
 /**

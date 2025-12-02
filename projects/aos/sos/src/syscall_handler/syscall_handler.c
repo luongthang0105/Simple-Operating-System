@@ -43,6 +43,12 @@ seL4_MessageInfo_t handle_syscall(UNUSED seL4_Word badge, UNUSED int num_args, b
     case SYSCALL_SOS_BRK:
         ret = handle_sos_brk();
         break;
+    case SYSCALL_SOS_MMAP:
+        ret = handle_sos_mmap();
+        break;
+    case SYSCALL_SOS_MUNMAP:
+        ret = handle_sos_munmap();
+        break;
     case SYSCALL_SOS_GETDIRENT:
         ret = handle_sos_getdirent();
         break;

@@ -16,6 +16,7 @@
 #include <clock/clock.h>
 #include "../utils.h"
 #include <elf/elf64.h>
+#include "sys_mmap.h"
 
 /* The number of additional stack pages to provide to the initial
  * process */
@@ -411,6 +412,9 @@ bool create_process(sos_thread_t* assigned_worker_thread, char *app_name, pid_t 
         ZF_LOGE("Failed to init vm regions");
         return false;
     }   
+
+    /* Initialise a mmap red-black tree */ 
+    init_mmap_region(&user_process->mmap_region);
 
     /* Init waitlist*/
     if (init_waitlist(&user_process->waitlist) == -1) {

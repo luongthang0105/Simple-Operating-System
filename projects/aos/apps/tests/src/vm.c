@@ -52,12 +52,10 @@ static void stack_test() {
     do_pt_test(buf1_ptrs);
 }
 
-
 static void heap_test() {
     char *buf2[NBLOCKS];
 
-
-    // /* heap test */
+    /* heap test */
     for (int b = 0; b < NBLOCKS; b++) {
         buf2[b] = malloc(NPAGES_PER_BLOCK * PAGE_SIZE_4K);
         assert(buf2[b]);
@@ -68,8 +66,30 @@ static void heap_test() {
     }
 }
 
+#define BLOCK_SIZE (512 * 1024)  // 512KB, above the 224KB threshold
 
+static void mmap_test() {
+    char *bufs[NBLOCKS];
 
+    for (int b = 0; b < NBLOCKS; b++) {
+        bufs[b] = malloc(BLOCK_SIZE);
+        assert(bufs[b] != NULL); 
+
+        for (size_t i = 0; i < BLOCK_SIZE; i += PAGE_SIZE_4K) {
+            bufs[b][i] = (char)(i & 0xFF);
+        }
+    }
+
+    for (int b = 0; b < NBLOCKS; b++) {
+        for (size_t i = 0; i < BLOCK_SIZE; i += PAGE_SIZE_4K) {
+            assert(bufs[b][i] == (char)(i & 0xFF));
+        }
+    }
+
+    for (int b = 0; b < NBLOCKS; b++) {
+        free(bufs[b]);
+    }
+}
 
 /* size constants */
 #define KB 1024
@@ -125,5 +145,7 @@ void test_virtual_memory()
     RUN_TEST(stack_test);
     RUN_TEST(heap_test);
     RUN_TEST(thrash);
+    RUN_TEST(mmap_test);
+
 }
 

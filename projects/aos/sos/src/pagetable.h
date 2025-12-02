@@ -60,5 +60,7 @@ int sos_shadow_unmap_frame(uintptr_t vaddr, pgd_t *pgd, cspace_t *cspace);
 
 pgd_t *create_pgd();
 void destroy_pgd(pgd_t *pgd, cspace_t *cspace, seL4_CPtr vspace);
+void destroy_page(page_metadata_t *page, cspace_t *cspace, seL4_CPtr vspace);
 page_metadata_t *find_page(uintptr_t vaddr, pgd_t *pgd);
+page_metadata_t **find_page_ptr(uintptr_t vaddr, pgd_t *pgd);
 unsigned char* find_frame_data(uintptr_t vaddr, pgd_t *pgd);

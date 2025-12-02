@@ -84,6 +84,8 @@ add_executable(
     src/syscall_handler/sys_write.c
     src/syscall_handler/sys_getdirent.c
     src/syscall_handler/sys_brk.c
+    src/syscall_handler/sys_mmap.c
+    src/syscall_handler/sys_munmap.c
     src/syscall_handler/sys_usleep.c
     src/syscall_handler/sys_timestamp.c
     src/syscall_handler/sys_process_create.c
