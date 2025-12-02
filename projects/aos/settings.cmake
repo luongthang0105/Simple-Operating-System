@@ -62,7 +62,7 @@ ApplyData61ElfLoaderSettings(${KernelPlatform} ${KernelSel4Arch})
 
 # turn on all the nice features for debugging
 # TODO for benchmarking, you should turn these OFF.
-set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "" FORCE)
+set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 set(KernelVerificationBuild OFF CACHE BOOL "" FORCE)
 set(KernelIRQReporting ON CACHE BOOL "" FORCE)
 set(KernelPrinting ON CACHE BOOL "" FORCE)
