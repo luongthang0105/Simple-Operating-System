@@ -10,6 +10,7 @@
  * @TAG(DATA61_GPL)
  */
 /* Simple shell to run on SOS */
+
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
@@ -23,6 +24,7 @@
 #include <syscalls.h>
 /* Your OS header file */
 #include <sos.h>
+
 #include "benchmark.h"
 
 #define BUF_SIZ    6144
@@ -65,11 +67,8 @@ static int cat(int argc, char **argv)
         num_written = write(stdout_fd, buf, num_read);
     }
 
-    int ret = close(stdout_fd);
-    assert(ret == 0);
-    
-    ret = close(fd);
-    assert(ret == 0);
+    close(stdout_fd);
+    close(fd);
 
     if (num_read == -1 || num_written == -1) {
         printf("error on write\n");
@@ -114,7 +113,7 @@ static int cp(int argc, char **argv)
     return 0;
 }
 
-#define MAX_PROCESSES 16
+#define MAX_PROCESSES 10
 
 static int ps(int argc, char **argv)
 {
@@ -268,8 +267,7 @@ static int kill(int argc, char *argv[])
     }
 
     pid = atoi(argv[1]);
-    int ret = sos_process_delete(pid);
-    printf("ret kill = %d\n", ret);
+    return sos_process_delete(pid);
 }
 
 static int benchmark(int argc, char *argv[])
@@ -299,23 +297,20 @@ struct command commands[] = { { "dir", dir }, { "ls", dir }, { "cat", cat }, {
 };
 
 int main(void)
-{   
-    in = open("console", O_RDONLY);
-    assert(in >= 0);
-    
-    printf("\n[SOS Starting]\n");
-
-    char buf[BUF_SIZ] = "hello";
+{
+    char buf[BUF_SIZ];
     char *argv[MAX_ARGS];
     int i, r, done, found, new, argc;
     char *bp, *p;
-    
-    
+
+    in = open("console", O_RDONLY);
+    assert(in >= 0);
 
     bp = buf;
     done = 0;
     new = 1;
 
+    printf("\n[SOS Starting]\n");
 
     while (!done) {
         if (new) {
