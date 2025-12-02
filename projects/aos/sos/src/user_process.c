@@ -86,7 +86,7 @@ int delete_user_process(int pid) {
      *  hence causing unexpected behaviors.
     */
     seL4_Error err = seL4_TCB_Suspend(user_process->tcb);
-    ZF_LOGF_IF(err != seL4_NoError, "Failed to suspend user process, seL4_Error=%d", err);
+    ZF_LOGE_IF(err != seL4_NoError, "Failed to suspend user process, seL4_Error=%d", err);
 
     /* vfs */
     destroy_vfs(user_process->vfs);
@@ -125,14 +125,18 @@ int delete_user_process(int pid) {
     cspace_destroy(&user_process->cspace);
     printf("delete cspace\n");
 
-    signal_then_destroy_caps(user_process->waitlist);
+    if (signal_then_destroy_caps(user_process->waitlist) == -1) {
+        ZF_LOGE("User process waitlist is NULL");
+    }
 
     /* free waitlist  */
     free(user_process->waitlist);
     printf("signals waiter and clean up\n");
     
     sos_thread_t *assigned_worker_thread = get_assigned_worker_thread(user_process);
-    assigned_worker_thread->assigned_pid = -1;
+    if (!assigned_worker_thread) {
+        assigned_worker_thread->assigned_pid = -1;
+    }
 
     if (assigned_worker_thread != current_thread) { /* suspend the worker thread and get it back to syscall loop */
         worker_thread_rerun(assigned_worker_thread);

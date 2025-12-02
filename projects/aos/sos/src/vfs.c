@@ -36,6 +36,8 @@ int init_vfs(vfs_t **vfs) {
 }
 
 void destroy_vfs(vfs_t *vfs) {
+    if (!vfs) return;
+
     for (int i = 0; i < PROCESS_MAX_FILES; i++) {
         // close all file descriptors
         if (vfs->fd_table[i].is_opened) {

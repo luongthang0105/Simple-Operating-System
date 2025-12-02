@@ -13,6 +13,8 @@ int init_vm_regions(list_t **vm_regions) {
 }
 
 void destroy_vm_regions(list_t *vm_regions) {
+    if (vm_regions == NULL) return;
+
     for (struct list_node *cur = vm_regions->head; cur != NULL;) {
         free(cur->data);
         

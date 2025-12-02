@@ -30,7 +30,7 @@ int add_waiter(waitlist_t *waitlist, seL4_CPtr ipc_ep) {
 }
 
 int signal_then_destroy_caps(waitlist_t *waitlist) {
-    assert(waitlist->ntfns != NULL);
+    if (waitlist->ntfns == NULL) return -1;
 
     for (struct list_node *cur = waitlist->ntfns->head; cur != NULL;) {
         seL4_CPtr *ipc_ep_ptr = cur->data;

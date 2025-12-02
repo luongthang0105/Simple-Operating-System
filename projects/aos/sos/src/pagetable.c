@@ -97,8 +97,6 @@ void destroy_pgd(pgd_t *pgd, cspace_t *cspace, seL4_CPtr vspace) {
 void destroy_pud(pud_t *pud, cspace_t *cspace, seL4_CPtr vspace) {
     if (pud == NULL) return;
 
-    printf("destroy pud\n");
-
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_pd(pud->page_directories[i], cspace, vspace);
         pud->page_directories[i] = NULL;
@@ -112,8 +110,6 @@ void destroy_pud(pud_t *pud, cspace_t *cspace, seL4_CPtr vspace) {
 void destroy_pd(pd_t *pd, cspace_t *cspace, seL4_CPtr vspace) {
     if (pd == NULL) return;
 
-    printf("destroy pd\n");
-
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_pt(pd->page_tables[i], cspace, vspace);
         pd->page_tables[i] = NULL;
@@ -126,8 +122,6 @@ void destroy_pd(pd_t *pd, cspace_t *cspace, seL4_CPtr vspace) {
 
 void destroy_pt(pt_t *pt, cspace_t *cspace, seL4_CPtr vspace) {
     if (pt == NULL) return;
-
-    printf("destroy pt\n");
 
     for (size_t i = 0; i < TABLE_SIZE_BITS; ++i) {
         destroy_page(pt->page_metadatas[i], cspace, vspace);
