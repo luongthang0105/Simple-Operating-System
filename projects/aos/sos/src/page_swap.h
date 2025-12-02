@@ -5,7 +5,7 @@
 /* The queue would contain (`PAGES_QUEUE_MAX_SIZE - 1`) pages only, because of the `SGLIB_QUEUE` being a ring buffer (so it keeps 1 slot to identify fullness of the queue). 
 However, it is okay because we do not store frame 0 (the sentinel NULL frame). */
 #define PAGES_QUEUE_MAX_SIZE    ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : CONFIG_SOS_FRAME_LIMIT * 10) 
-#define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 1500))
+#define OFFSET_QUEUE_MAX_SIZE   ((CONFIG_SOS_FRAME_LIMIT == 0ul) ? (1 << 19) : (CONFIG_SOS_FRAME_LIMIT * 150))
 #else
 #define PAGES_QUEUE_MAX_SIZE (1 << 19)
 #define OFFSET_QUEUE_MAX_SIZE (1 << 19)
