@@ -1,5 +1,6 @@
 #include <sel4/shared_types_gen.h>
 #include "../user_process.h"
+#include "../mapping.h"
 
 extern cspace_t cspace;
 
@@ -43,12 +44,13 @@ uintptr_t handle_sos_brk() {
         uintptr_t next_page_vaddr_to_dealloc = ROUND_DOWN(curr_brk, PAGE_SIZE_4K);
         
         while (next_page_vaddr_to_dealloc >= new_brk) {
-            int ret = sos_shadow_unmap_frame(next_page_vaddr_to_dealloc, user_process->page_global_directory, &cspace);
-            if (ret == -1) {
-                return 0;
-            }
-            user_process->size -= 1; // assumption: this is the only place where we will decrease allocate page
+            page_metadata_t **page_ptr = find_page_ptr(next_page_vaddr_to_dealloc, user_process->page_global_directory);
+            if (page_ptr == NULL || *page_ptr == NULL) break;
+            destroy_page(*page_ptr, &cspace, user_process->vspace);
+            *page_ptr = NULL; // sets this to NULL, so destroy_pt will not call destroy_page on this
+
             next_page_vaddr_to_dealloc -= PAGE_SIZE_4K;
+            user_process->size -= 1; // its better to have a mechanism to make sure we dont miss this
         }
     }
 

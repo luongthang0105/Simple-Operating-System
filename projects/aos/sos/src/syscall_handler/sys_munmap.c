@@ -32,6 +32,8 @@ int handle_sos_munmap() {
         *page_ptr = NULL; // sets this to NULL, so destroy_pt will not call destroy_page on this
 
         num_remaining_pages_to_dealloc -= PAGE_SIZE_4K;
+        user_process->size -= 1;
+
         next_vaddr_to_dealloc += PAGE_SIZE_4K;
     }
 
