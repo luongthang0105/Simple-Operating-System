@@ -6,6 +6,7 @@
 #include <sossharedapi/process.h>
 #include "recursive_mutex.h"
 #include "waitlist.h"
+#include "syscall_handler/sys_mmap.h"
 
 typedef uint32_t tid_t;
 struct page_global_directory;
@@ -36,6 +37,7 @@ struct user_process
     pgd_t *page_global_directory;
     list_t *vm_regions;
 
+    mmap_tree *mmap_region;
     vm_region_t *heap_region;
     vm_region_t *stack_region;
 

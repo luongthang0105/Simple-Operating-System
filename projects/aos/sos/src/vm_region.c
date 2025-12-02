@@ -1,5 +1,6 @@
 #include "vm_region.h"
 #include <stdbool.h>
+#include "syscall_handler/sys_mmap.h"
 
 int init_vm_regions(list_t **vm_regions) {
     *vm_regions = malloc(sizeof(list_t));
@@ -67,5 +68,18 @@ vm_region_t* find_valid_region(uintptr_t faultaddr, seL4_Uint64 fsr, list_t *vm_
             if (is_in_range(region_start, region_end, faultaddr) && is_valid_fsr(fsr, vm_region)) return vm_region;
         }
     }
+    return NULL;
+}
+
+mmap_tree *find_valid_mmap_region(uintptr_t faultaddr, seL4_Uint64 fsr, mmap_tree *mmap_tree) {
+    struct sglib_mmap_tree_iterator it;
+    struct mmap_tree *mmap_node;
+
+    for (mmap_node = sglib_mmap_tree_it_init_inorder(&it, mmap_tree); mmap_node != NULL; mmap_node = sglib_mmap_tree_it_next(&it)) {
+        uintptr_t region_start = mmap_node->vaddr_base;
+        uintptr_t region_end = region_start + mmap_node->length;
+        if (is_in_range(region_start, region_end, faultaddr)) return mmap_node;
+    }
+
     return NULL;
 }

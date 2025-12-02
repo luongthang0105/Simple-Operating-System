@@ -39,5 +39,7 @@ void sosapi_init_syscall_table(void)
     muslcsys_install_syscall(__NR_clock_gettime, sys_clock_gettime);
     muslcsys_install_syscall(__NR_tkill, sys_tgkill);
     muslcsys_install_syscall(__NR_madvise, sys_madvise);
+    muslcsys_install_syscall(__NR_mmap, sys_mmap);
+    muslcsys_install_syscall(__NR_munmap, sys_munmap);
     sel4runtime_set_exit(exit);
 }

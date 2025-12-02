@@ -294,7 +294,7 @@ sos_thread_t* create_worker_thread(size_t thread_id, thread_main_f *function, bo
 
 NORETURN void *main_continued(UNUSED void *arg)
 {
-    /* Initialise other system compenents here */
+    /* Initialise other system components here */
     seL4_CPtr ipc_ep, ntfn;
     sos_ipc_init(&ipc_ep, &ntfn);
     sos_init_irq_dispatch(

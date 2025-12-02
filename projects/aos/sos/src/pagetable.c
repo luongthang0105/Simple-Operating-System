@@ -392,6 +392,49 @@ page_metadata_t *find_page(uintptr_t vaddr, pgd_t *pgd) {
     return (page != NULL && ret == 0) ? page : NULL;
 }
 
+page_metadata_t **find_page_ptr(uintptr_t vaddr, pgd_t *pgd) {
+    size_t pgd_index = get_pgd_bits(vaddr);
+    size_t pud_index = get_pud_bits(vaddr);
+    size_t pd_index = get_pd_bits(vaddr);
+    size_t pt_index = get_pt_bits(vaddr);
+
+    user_process_t *user_process = get_current_user_process();
+
+    pud_t* pud = pgd->page_upper_directories[pgd_index];
+    if (!pud) {
+        ZF_LOGE("%s does not exist", PAGE_UPPER_DIRECTORY_NAME);
+        return NULL;
+    }
+
+    pd_t* pd = pud->page_directories[pud_index];
+    if (!pd) {
+        ZF_LOGE("%s does not exist", PAGE_DIRECTORY_NAME);
+        return NULL;
+    }
+
+    pt_t* pt = pd->page_tables[pd_index];
+    if (!pt) {
+        ZF_LOGE("%s does not exist", PAGE_TABLE_NAME);
+        return NULL;
+    }
+
+    int ret = 0;
+    page_metadata_t *page = pt->page_metadatas[pt_index];
+
+    if (page != NULL) { /* page is either on disk or in memory */
+        if (page->pagefile_offset != -1) {   /* page is on disk */
+            ret = swap_to_mem(page, user_process->vspace);
+        } 
+        else { /* page is still in memory. */
+            if (page->reference_bit == 0) {
+                ret = reference_page(page, user_process->vspace, vaddr, page->rights);
+            }
+        }
+    }
+    
+    return (page != NULL && ret == 0) ? (&pt->page_metadatas[pt_index]) : NULL;
+}
+
 unsigned char* find_frame_data(uintptr_t vaddr, pgd_t *pgd) {
     // find the page associated with this buf_vaddr
     page_metadata_t *page = find_page(vaddr, pgd);
