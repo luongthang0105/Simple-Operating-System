@@ -36,6 +36,9 @@ extern bool has_init_page_swap;
 extern sync_recursive_mutex_t *in_memory_pages_mutex;
 extern pages_queue_t in_memory_pages;
 
+SGLIB_DEFINE_QUEUE_PROTOTYPES(pages_queue_t, page_metadata_t *, arr, i, j, PAGES_QUEUE_MAX_SIZE)
+SGLIB_DEFINE_QUEUE_PROTOTYPES(offset_queue_t, size_t, arr, i, j, OFFSET_QUEUE_MAX_SIZE)
+
 /*  If current queue is full, evict a page from its allocated frame using the second-chance replacement policy.
     Otherwise, do nothing. After calling `evict_page()`, it is guaranteed that there is at least one free frame in the frame table.
 */

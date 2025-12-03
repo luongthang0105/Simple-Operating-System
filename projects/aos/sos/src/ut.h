@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sel4/sel4.h>
-#include <utils/util.h>
 #include <cspace/cspace.h>
 
 #include "bootstrap.h"

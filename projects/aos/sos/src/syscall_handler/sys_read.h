@@ -10,7 +10,7 @@ typedef struct
 {
     size_t thread_index;
     pid_t expected_pid;
-    size_t bytes_read;
+    int64_t bytes_read;
     unsigned char *data;
 } nfs_read_cb_args_t;
 
@@ -27,6 +27,7 @@ typedef struct nwcs_input
     size_t j;
 } nwcs_input_t;
 extern nwcs_input_t nwcs_input;
+SGLIB_DEFINE_QUEUE_PROTOTYPES(nwcs_input_t, char, arr, i, j, DIM);
 
 /**
  * ID of the thread currently blocked waiting for console input,

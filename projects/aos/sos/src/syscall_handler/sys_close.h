@@ -13,4 +13,4 @@
  *
  * @return 0 on success, or -1 on failure.
  */
-int handle_sos_close(size_t fd);
+int handle_sos_close(int fd);

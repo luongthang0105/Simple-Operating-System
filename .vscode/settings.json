@@ -113,6 +113,13 @@
         "cstdlib": "c",
         "memory": "c",
         "new": "c",
-        "sys_mmap.h": "c"
+        "sys_mmap.h": "c",
+        "typeindex": "c",
+        "typeinfo": "c",
+        "zf_log_if.h": "c",
+        "zf_log.h": "c",
+        "fence.h": "c",
+        "time.h": "c",
+        "elf64.h": "c"
     }
 }

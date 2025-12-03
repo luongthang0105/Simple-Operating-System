@@ -5,27 +5,28 @@
 #include <sossharedapi/process.h>
 #include "waitlist.h"
 #include "threads.h"
+#include "mapping.h"
 
 extern cspace_t cspace;
 sync_recursive_mutex_t *user_processes_mutex;
 
 user_process_t *user_processes[PROCESSES_POOL_SZ] = {NULL};
 SGLIB_DEFINE_QUEUE_FUNCTIONS(pid_queue_t, pid_free_record_t, arr, i, j, PROCESSES_POOL_SZ + 1);
-pid_queue_t free_pids = {.arr = {0}, .i = 0, .j = 0};
+pid_queue_t free_pids = {0};
 
 sos_thread_t *get_assigned_worker_thread(user_process_t *user_process) {
     tid_t thread_id = user_process->assigned_worker_thread_id;
 
-    if (thread_id < 0 || thread_id > MAX_WORKER_THREADS) {
-        ZF_LOGE("Invalid thread id = %d\n", thread_id);
-        return NULL;
-    }
+    // if (thread_id < 0 || thread_id > MAX_WORKER_THREADS) {
+    //     ZF_LOGE("Invalid thread id = %d\n", thread_id);
+    //     return NULL;
+    // }
 
     return worker_threads[thread_id];
 }
-int get_num_active_processes() {
+unsigned get_num_active_processes() {
     sync_recursive_mutex_lock(user_processes_mutex);
-    int num_active_processes = 0;
+    unsigned num_active_processes = 0;
     for (pid_t pid = 0; pid < PROCESSES_POOL_SZ; pid++) {
         if (user_processes[pid] != NULL) {
             num_active_processes += 1;

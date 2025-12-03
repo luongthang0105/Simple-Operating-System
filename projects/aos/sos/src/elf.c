@@ -22,7 +22,7 @@
 #include "mapping.h"
 #include "elfload.h"
 #include "nfs_wrapper.h"
-
+#include "vmem_layout.h"
 /*
  * Convert ELF permissions into seL4 permissions.
  */
@@ -154,7 +154,7 @@ static int load_segment_into_vspace(cspace_t *cspace, size_t offset, size_t segm
 
 int elf_load(cspace_t *cspace, elf_t *elf_file, struct nfsfh* elf_fh, user_process_t *user_process)
 {
-    uintptr_t heap_vaddr_base;
+    uintptr_t heap_vaddr_base = PROCESS_VMEM_START;
     int num_headers = elf_getNumProgramHeaders(elf_file);
     for (int i = 0; i < num_headers; i++) {
 

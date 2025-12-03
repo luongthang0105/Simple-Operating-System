@@ -1,8 +1,8 @@
 #include "nfs_wrapper.h"
 #include <fcntl.h>
+#include "network.h"
 
-
-void nfs_stat_cb(int err, struct nfs_context *nfs, void *data, void *private_data)
+void nfs_stat_cb(int err, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {
     sync_recursive_mutex_lock(worker_threads_mutex);
     nfs_stat_cb_args_t *args = (nfs_stat_cb_args_t *)private_data;
@@ -56,7 +56,7 @@ void nfs_stat_cb(int err, struct nfs_context *nfs, void *data, void *private_dat
 int nfs_stat_wrapper(unsigned char *temp_path_buf, nfs_stat_cb_args_t* args) {
     struct nfs_context *nfs_context = get_nfs_context();
 
-    int err = nfs_stat64_async(nfs_context, temp_path_buf, nfs_stat_cb, (void *)args);
+    int err = nfs_stat64_async(nfs_context, (const char*)temp_path_buf, nfs_stat_cb, (void *)args);
     if (err < 0)
     {
         ZF_LOGE("An error occured when trying to queue the command nfs_stat64_async. The callback will not be invoked.");
@@ -72,7 +72,7 @@ int nfs_stat_wrapper(unsigned char *temp_path_buf, nfs_stat_cb_args_t* args) {
 
     return 0;
 }
-void nfs_pread_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
+void nfs_pread_cb(int status, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {
     sync_recursive_mutex_lock(worker_threads_mutex);
 

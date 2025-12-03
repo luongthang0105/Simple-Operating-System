@@ -3,8 +3,9 @@
 #include "../threads.h"
 #include <fcntl.h>
 #include "networkconsole/networkconsole.h"
+#include "../network.h"
 
-void nfs_write_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
+void nfs_write_cb(int status, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {
     sync_recursive_mutex_lock(worker_threads_mutex);
 
@@ -51,14 +52,14 @@ int handle_sos_write()
 
     if (!user_process->vfs->fd_table[file_desc].is_opened)
     {
-        ZF_LOGE("File %zu is not open yet!", file_desc);
+        ZF_LOGE("File %d is not open yet!", file_desc);
         return -1;
     }
 
     if (user_process->vfs->fd_table[file_desc].mode != O_WRONLY &&
         user_process->vfs->fd_table[file_desc].mode != O_RDWR)
     {
-        ZF_LOGE("File %zu is not open to write!", file_desc);
+        ZF_LOGE("File %d is not open to write!", file_desc);
         return -1;
     }
 
@@ -84,7 +85,7 @@ int handle_sos_write()
     while (nbytes > 0)
     {
         size_t bytes_to_write = MIN(BREAKDOWN_THRESHOLD, nbytes);
-        size_t bytes_written = 0;
+        int64_t bytes_written = 0;
 
         int status = copy_from_user(temp_buf, (void *)(buf_vaddr + total_bytes_written), bytes_to_write);
         if (status == -1)
@@ -117,13 +118,12 @@ int handle_sos_write()
             if (bytes_written < 0) {
                 ZF_LOGE("Failed to send %lu bytes via network_console_send", bytes_to_write);
                 free(temp_buf);
-                seL4_SetMR(0, -1);
-                return;
+                return -1;
             }
         }
         else
         { /* console file, send it to network console */
-            int bytes_sent = network_console_send(get_nwcs(), temp_buf, bytes_to_write);
+            int bytes_sent = network_console_send(get_nwcs(), (char*)temp_buf, bytes_to_write);
             if (bytes_sent == -1)
             {
                 ZF_LOGE("Failed to send %lu bytes via network_console_send", bytes_to_write);

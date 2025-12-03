@@ -145,7 +145,7 @@ void nfslib_poll()
     }
 
     if (nfs_service(nfs, pfd.revents) < 0) {
-        // printf("nfs_service failed\n");
+        ZF_LOGI("nfs_service failed");
     }
 }
 
@@ -209,9 +209,9 @@ void dhcp_callback(void *cli, int code)
     /* ZF_LOGD("[DHCP] ip: %s", ipstr); */
     ip_octet = ((uint8_t *) &ipaddr.addr)[3];
     pico_ipv4_to_string(ipstr, netmask.addr);
-    // printf("DHCP client: netmask %s\n", ipstr);
+    ZF_LOGI("DHCP client: netmask %s", ipstr);
     pico_ipv4_to_string(ipstr, gateway.addr);
-    // printf("DHCP client: gateway %s\n", ipstr);
+    ZF_LOGI("DHCP client: gateway %s", ipstr);
 
     dhcp_status = DHCP_STATUS_FINISHED;
 }
@@ -219,7 +219,7 @@ void dhcp_callback(void *cli, int code)
 void network_init(cspace_t *cspace, void *timer_vaddr, seL4_CPtr irq_ntfn)
 {
     int error;
-    ZF_LOGI("\nInitialising network...\n\n");
+    ZF_LOGI("\nInitialising network...\n");
 
     /* set up the network device irq */
     init_irq(NETWORK_IRQ, true, network_irq);
@@ -299,13 +299,12 @@ void network_init(cspace_t *cspace, void *timer_vaddr, seL4_CPtr irq_ntfn)
     ZF_LOGF_IF(ret != 0, "NFS Mount failed: %s", nfs_get_error(nfs));
 }
 
-void nfs_mount_cb(int status, UNUSED struct nfs_context *nfs, void *data,
-                  void *private_data)
+void nfs_mount_cb(int status, UNUSED struct nfs_context *nfs, void *data, UNUSED void *private_data)
 {
     if (status < 0) {
         ZF_LOGF("mount/mnt call failed with \"%s\"\n", (char *)data);
     }
 
-    // printf("Mounted nfs dir %s\n", nfs_dir_buf);
+    ZF_LOGI("Mounted nfs dir %s", nfs_dir_buf);
     has_init_network = true;
 }

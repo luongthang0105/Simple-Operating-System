@@ -3,7 +3,7 @@
 #include <clock/clock.h>
 
 /* Callback for timer registered by usleep system call */
-void timeout_callback(uint32_t id, void *data)
+void timeout_callback(UNUSED uint32_t id, void *data)
 {
     int thread_index = *(int *)data;
     seL4_Signal(worker_threads[thread_index]->ntfn);

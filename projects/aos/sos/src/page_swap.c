@@ -7,6 +7,7 @@
 #include "cap_utils.h"
 #include "backtrace.h"
 #include "threads.h"
+#include "frame_table.h"
 
 extern cspace_t cspace;
 struct nfsfh *pagefile_fh; /* NFS file handle for pagefile */
@@ -75,10 +76,25 @@ static size_t free_pagefile_offsets_pop();
 static void free_pagefile_offsets_add(size_t new_offset);
 
 int swap_to_mem(page_metadata_t *page, seL4_CPtr vspace) {   
+    /** Locking frame_table_mutex here important to avoid a deadlock.
+     *  The pattern of deadlock (without locking frame_table_mutex here) is:
+     *  Thread 1: swap_to_mem()          -> alloc_frame() -> evict_page() ; lock in_memory_pages_mutex, then lock frame_table_mutex.
+     *  Thread 2: init_frame__metadata() -> alloc_frame() -> evict_page() ; lock frame_table_mutex    , then lock in_memory_pages mutex.
+     * 
+     *  With locking frame_table_mutex here:
+     *  Thread 1: swap_to_mem()          -> alloc_frame() -> evict_page() ; lock frame_table_mutex    , then lock in_memory_pages mutex.
+     *  Thread 2: init_frame__metadata() -> alloc_frame() -> evict_page() ; lock frame_table_mutex    , then lock in_memory_pages mutex.
+     *  
+     *  The order of locking is the same, hence makes sure no deadlock.
+     */
+    sync_recursive_mutex_lock(frame_table_mutex);
     sync_recursive_mutex_lock(in_memory_pages_mutex);
 
+    /** We must put alloc_frame() within the in_memory_pages_mutex so that if evict_page() was called, 
+     *  the slot in `in_memory_pages` is guaranteed to be reserved for this page. */
     frame_ref_t frame_ref = alloc_frame();
     assert(frame_ref != NULL_FRAME);
+    sync_recursive_mutex_unlock(frame_table_mutex);
 
     // write the content of this page to the frame
     unsigned char *data = frame_data(frame_ref);

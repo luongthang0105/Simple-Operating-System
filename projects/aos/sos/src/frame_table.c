@@ -20,7 +20,6 @@
 #include <sos/gen_config.h>
 #include "page_swap.h"
 #include "backtrace.h"
-#include "recursive_mutex.h"
 /* Debugging macro to get the human-readable name of a particular list. */
 #define LIST_NAME(list) LIST_ID_NAME(list->list_id)
 

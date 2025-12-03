@@ -3,9 +3,6 @@
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
-
-#pragma once
-
 #include <autoconf.h>
 #include <assert.h>
 #include <sel4/sel4.h>

@@ -1,14 +1,13 @@
 #include "vm_fault.h"
 #include "../user_process.h"
 #include "../pagetable.h"
-#include <sys/mman.h>
 #include "../syscall_handler/sys_mmap.h"
+#include "../mapping.h"
 
 extern cspace_t cspace;
 
 int handle_vm_fault(seL4_Fault_t fault) {
     uintptr_t original_faultadrr = seL4_Fault_VMFault_get_Addr(fault);
-    // printf("original fault: %p\n", original_faultadrr);
 
     seL4_Uint64 fsr = seL4_Fault_VMFault_get_FSR(fault);
 
@@ -31,16 +30,7 @@ int handle_vm_fault(seL4_Fault_t fault) {
     if (valid_region != NULL) {
         rights = valid_region->rights;
     } else if (valid_mmap_region != NULL) {
-        bool canRead = false;
-        bool canWrite = false;
-        if (valid_mmap_region->prot & PROT_READ) {
-            canRead = true;
-        }
-
-        if (valid_mmap_region->prot & PROT_WRITE) {
-            canWrite = true;
-        }
-        rights = seL4_CapRights_new(false, false, canRead, canWrite);
+        rights = get_mmap_region_rights(valid_mmap_region);
     }
    
     uintptr_t faultaddr = PAGE_ALIGN_4K(original_faultadrr);

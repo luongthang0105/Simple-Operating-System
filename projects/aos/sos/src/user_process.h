@@ -106,5 +106,5 @@ void init_free_pids();
  */
 int get_available_pid();
 int delete_user_process(int pid);
-int get_num_active_processes();
+unsigned get_num_active_processes();
 void get_user_process_status(sos_process_t *processes, int num_active_processes);

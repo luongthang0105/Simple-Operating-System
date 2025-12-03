@@ -3,12 +3,13 @@
 #include <sel4/shared_types_gen.h>
 #include <aos/sel4_zf_logif.h>
 #include <sossharedapi/process.h>
+#include <stdint.h>
 
 typedef struct
 {
     size_t thread_index;
     pid_t expected_pid;
-    size_t bytes_written;
+    int64_t bytes_written;
 } nfs_write_cb_args_t;
 
 #define BREAKDOWN_THRESHOLD BIT(16)

@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sos.h>
-
+#include <stdlib.h>
 
 #define NBLOCKS 9
 #define NPAGES_PER_BLOCK 28

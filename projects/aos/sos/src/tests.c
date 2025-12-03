@@ -10,9 +10,9 @@
  * @TAG(DATA61_GPL)
  */
 #define ZF_LOG_LEVEL ZF_LOG_INFO
+#include <utils/zf_log.h>
 #include <assert.h>
 #include <cspace/cspace.h>
-#include <utils/util.h>
 #include <sel4/sel4.h>
 #include "dma.h"
 #include "bootstrap.h"

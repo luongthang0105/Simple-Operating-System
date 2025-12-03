@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include "../user_process.h"
 #include "../nfs_wrapper.h"
+#include "../network.h"
 
 int handle_sos_stat()
 {
@@ -26,18 +27,17 @@ int handle_sos_stat()
         return -1;
     }
 
-    if (strcmp(temp_path_buf, "..") == 0)
+    if (strcmp((const char*)temp_path_buf, "..") == 0)
     {
         free(temp_path_buf);
         temp_path_buf = malloc(strlen(".") + 1);
         strcpy(temp_path_buf, ".");
     }
 
-    struct nfs_context *nfs_context = get_nfs_context();
     nfs_stat_cb_args_t args = {
         .thread_index = current_thread->thread_id,
         .expected_pid = current_thread->assigned_pid,
-        .st_type = strcmp(temp_path_buf, "console") == 0 ? ST_SPECIAL : ST_FILE,
+        .st_type = strcmp((const char*)temp_path_buf, "console") == 0 ? ST_SPECIAL : ST_FILE,
         .status = 0
     };
 

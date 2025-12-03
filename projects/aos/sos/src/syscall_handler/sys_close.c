@@ -4,8 +4,10 @@
 #include <fcntl.h>
 #include "sys_read.h"
 #include "../nfs_wrapper.h"
+#include "sys_close.h"
+#include "../network.h"
 
-int handle_sos_close(size_t fd)
+int handle_sos_close(int fd)
 {
     ZF_LOGV("syscall: close!\n");
 
@@ -33,7 +35,6 @@ int handle_sos_close(size_t fd)
         return 0;
     }
 
-    struct nfs_context *nfs_context = get_nfs_context();
     nfs_close_cb_args_t args = {
         .thread_index = current_thread->thread_id,
         .expected_pid = current_thread->assigned_pid

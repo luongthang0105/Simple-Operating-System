@@ -3,6 +3,7 @@
 #include "../user_process.h"
 #include "../threads.h"
 #include <fcntl.h>
+#include "../network.h"
 
 SGLIB_DEFINE_QUEUE_FUNCTIONS(nwcs_input_t, char, arr, i, j, DIM);
 nwcs_input_t nwcs_input = {.arr = {0}, .i = 0, .j = 0};
@@ -23,7 +24,7 @@ int get_nwcs_reader_value() {
     return value;
 }
 
-void nfs_read_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
+void nfs_read_cb(int status, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {
     sync_recursive_mutex_lock(worker_threads_mutex);
 
@@ -109,7 +110,7 @@ int handle_sos_read()
     while (nbytes > 0)
     {
         size_t bytes_to_read = MIN(BREAKDOWN_THRESHOLD, nbytes);
-        size_t bytes_read = 0;
+        int64_t bytes_read = 0;
         bool early_return = false;
         bool failed = false;
 

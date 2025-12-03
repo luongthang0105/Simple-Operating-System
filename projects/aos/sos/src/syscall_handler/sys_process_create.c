@@ -1,4 +1,3 @@
-#include <aos/sel4_zf_logif.h>
 #include "sys_process_create.h"
 #include "../user_process.h"
 #include "../threads.h"
@@ -17,6 +16,8 @@
 #include "../utils.h"
 #include <elf/elf64.h>
 #include "sys_mmap.h"
+#include "../cap_utils.h"
+#include <utils/util.h>
 
 /* The number of additional stack pages to provide to the initial
  * process */
@@ -29,11 +30,10 @@ typedef struct nfs_open_cb_args {
     int err;
 } nfs_open_cb_args_t;
 
-static void nfs_open_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
+static void nfs_open_cb(int status, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {   
     nfs_open_cb_args_t *ret_private_data = (nfs_open_cb_args_t *)private_data;
     int thread_index = ret_private_data->thread_index;
-    user_process_t *user_process = get_current_user_process_by_thread(thread_index);
     
     if (status < 0)
     {
@@ -174,7 +174,7 @@ static int stack_write(seL4_Word *mapped_stack, int index, uintptr_t val)
 /** Extract the `__vsyscall` section offset, with respect to the elf base.
  * This function does not handle corrupted ELF file.
 */
-static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf_fh) {
+static uintptr_t get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf_fh) {
     /* assume given elf is elf64 */
 
     /** Section table is an array of headers. We can extract section name offset (w.r.t string table) from it. 
@@ -188,18 +188,18 @@ static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf
     Elf64_Shdr *section_headers = malloc(section_headers_total_size);
     if (section_headers == NULL) {
         ZF_LOGE("Failed to allocate memory for section headers");
-        return NULL;
+        return 0;
     }
     nfs_pread_cb_args_t args = {
         .thread_index = current_thread->thread_id,
-        .read_buf = section_headers,
+        .read_buf = (unsigned char*) section_headers,
         .expected_pid = current_thread->assigned_pid
     };
 
     if (nfs_pread_wrapper(elf_fh, &args, section_table_offset, section_headers_total_size)) {
         ZF_LOGE("Failed to read section table");
         free(section_headers);
-        return NULL;
+        return 0;
     }
 
     size_t str_table_idx = elf_getSectionStringTableIndex(elf_file);
@@ -219,24 +219,24 @@ static uintptr_t* get_vsyscall_offset_wrt_elf(elf_t *elf_file, struct nfsfh *elf
         /* read the section name */
         args = (nfs_pread_cb_args_t) {
             .thread_index = current_thread->thread_id,
-            .read_buf = section_name,
+            .read_buf = (unsigned char*) section_name,
             .expected_pid = current_thread->assigned_pid
         };
         if (nfs_pread_wrapper(elf_fh, &args, section_name_offset_wrt_elf, __vsyscall_str_size)) {
-            ZF_LOGI("Failed to read section name at section number %d. Continue to read other section names.", i);
+            ZF_LOGI("Failed to read section name at section number %zu. Continue to read other section names.", i);
             continue;
         }
 
         if (strcmp(section_name, "__vsyscall") == 0) {
             free(section_headers);
             free(section_name);
-            return section_headers[i].sh_offset; /* gets the offset only */
+            return (uintptr_t) section_headers[i].sh_offset; /* gets the offset only */
         }
     }
 
     free(section_headers);
     free(section_name);
-    return NULL;
+    return 0;
 }
 /* set up System V ABI compliant stack, so that the process can
  * start up and initialise the C library */
@@ -263,7 +263,7 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
         uintptr_t vsyscall_offset = get_vsyscall_offset_wrt_elf(elf_file, elf_fh);
         nfs_pread_cb_args_t args = {
             .thread_index = current_thread->thread_id, 
-            .read_buf = &sysinfo_section,
+            .read_buf = (unsigned char*) (&sysinfo_section),
             .expected_pid = current_thread->assigned_pid
         };
         if (nfs_pread_wrapper(elf_fh, &args, vsyscall_offset, sizeof(sysinfo_section))) {
@@ -357,13 +357,19 @@ static uintptr_t init_process_stack(cspace_t *cspace, seL4_CPtr local_vspace, el
             return 0;
         }
     }
-    /* Create a stack region */
-    user_process->stack_region = add_vm_region(user_process->vm_regions, stack_top, MAX_PROCESS_STACK_PAGES * PAGE_SIZE_4K, seL4_ReadWrite, true);
+    /** Create a stack region. 
+     *  It is important to include the first page which stores System V stack compliance stuff,
+     *  because we may need to read data from that page (`__sel4_start_c` do this).
+     *  Hence, the region starts at PROCESS_STACK_TOP and an additional page is included.
+    */
+    user_process->stack_region = add_vm_region(user_process->vm_regions, PROCESS_STACK_TOP, PAGE_SIZE_4K + MAX_PROCESS_STACK_PAGES * PAGE_SIZE_4K, seL4_ReadWrite, true);
     if (user_process->stack_region == NULL) {
         ZF_LOGE("Unable to add stack region");
         return 0;
     }
     user_process->guard_page_vaddr = stack_bottom - PAGE_SIZE_4K;
+
+    // the returned stack top vaddr should not include the compliant stuff, so just return `stack_top`.
     return stack_top;
 }
 
@@ -501,7 +507,7 @@ bool create_process(sos_thread_t* assigned_worker_thread, char *app_name, pid_t 
     err = seL4_TCB_SetSchedParams(user_process->tcb, seL4_CapInitThreadTCB, seL4_MinPrio, APP_PRIORITY,
                                   user_process->sched_context, assigned_worker_thread->ipc_ep);
     if (err != seL4_NoError) {
-        ZF_LOGE("Unable to set scheduling params, seL4_Error = %d\n", err);
+        ZF_LOGE("Unable to set scheduling params, seL4_Error = %zu\n", err);
         return false;
     }
 
@@ -510,7 +516,7 @@ bool create_process(sos_thread_t* assigned_worker_thread, char *app_name, pid_t 
 
     /* set up the stack */
     seL4_Word sp = init_process_stack(&cspace, seL4_CapInitThreadVSpace, elf_file, elf_fh, pid);
-    if (sp == NULL) {
+    if (sp == 0) {
         ZF_LOGE("Failed to init process stack");
         return false;
     }
@@ -528,11 +534,13 @@ bool create_process(sos_thread_t* assigned_worker_thread, char *app_name, pid_t 
         .sp = sp,
     };
 
-    strncpy(user_process->command, app_name, N_NAME);
+    strncpy(user_process->command, app_name, N_NAME - 1);
+    user_process->command[N_NAME - 1] = '\0';
+
     user_process->stime = get_time() / 1000;
     user_process->assigned_worker_thread_id = assigned_worker_thread->thread_id;
 
-    // printf("Starting %s at %p\n", app_name, (void *) context.pc);
+    ZF_LOGI("Starting %s at %p", app_name, (void *) context.pc);
     err = seL4_TCB_WriteRegisters(user_process->tcb, true, 0, sizeof(context) / sizeof(seL4_Word), &context);
     ZF_LOGE_IF(err, "Failed to write registers");
 
@@ -555,7 +563,6 @@ int handle_sos_process_create() {
         free(path); /* path can either be freed already or not. Just free it again anyways. */
         return -1;
     }
-    // ZF_LOGE("finish open elf\n");
 
     sos_stat_t elf_stat;
     if (get_elf_stat(path, &elf_stat)) {
@@ -565,7 +572,6 @@ int handle_sos_process_create() {
         close_elf(elf_fh);
         return -1;
     }
-    // ZF_LOGE("finish get elf stat\n");
 
     if (!(elf_stat.st_fmode & FM_EXEC)) {
         ZF_LOGE("Elf file must be executable");
@@ -584,7 +590,6 @@ int handle_sos_process_create() {
         close_elf(elf_fh);
         return -1;
     }
-    // ZF_LOGE("finish read header \n");
 
     // make an elf_t out of it
     elf_t elf_file;
@@ -625,7 +630,7 @@ int handle_sos_process_create() {
         free(elf_header_data);
         close_elf(elf_fh);
 
-        // TODO: clean up the user process.....
+        // clean up the user process after it fails
         user_process_t *user_process = user_processes[pid];
 
         // vfs

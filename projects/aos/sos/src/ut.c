@@ -15,6 +15,7 @@
 #include <cspace/cspace.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <utils/util.h>
 
 #define SIZE_BITS_TO_INDEX(x) (x - seL4_EndpointBits)
 

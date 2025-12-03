@@ -25,7 +25,6 @@
 
 #pragma once
 
-#include <utils/util.h>
 #include <stdint.h>
 #include <sel4/sel4.h>
 #include <aos/strerror.h>

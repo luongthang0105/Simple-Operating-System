@@ -74,7 +74,7 @@ struct network_console *network_console_init(void)
 
     struct pico_ip4 *src = pico_ipv4_source_find(&gateway);
     unsigned char *octects = (unsigned char *) &src->addr;
-    // printf("libnetworkconsole using udp port %d\n", AOS_BASEPORT + octects[3]);
+    ZF_LOGI("libnetworkconsole using udp port %d\n", AOS_BASEPORT + octects[3]);
 
     /* Configure peer/port for sendto */
     pico_string_to_ipv4(CONFIG_SOS_GATEWAY, &network_console.peer);

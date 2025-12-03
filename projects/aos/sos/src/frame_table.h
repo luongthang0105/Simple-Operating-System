@@ -18,6 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <cspace/cspace.h>
+#include "recursive_mutex.h"
 
 /*
  * Every frame in the frame table is referenced by a compact index into
@@ -66,6 +67,8 @@ PACKED struct frame {
     size_t unused : 4;
 };
 compile_time_assert("Small CPtr size", 20 >= INITIAL_TASK_CSPACE_BITS);
+
+extern sync_recursive_mutex_t *frame_table_mutex;
 
 /*
  * Initialise frame table.

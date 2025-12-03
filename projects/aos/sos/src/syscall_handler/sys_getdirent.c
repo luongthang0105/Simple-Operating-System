@@ -1,11 +1,12 @@
 #include "sys_getdirent.h"
 #include "../user_process.h"
 #include "../threads.h"
+#include "../network.h"
 
 extern user_process_t user_process;
 extern sos_thread_t *worker_threads[MAX_WORKER_THREADS];
 
-void nfs_opendir_cb(int status, struct nfs_context *nfs, void *data, void *private_data)
+void nfs_opendir_cb(int status, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {
     sync_recursive_mutex_lock(worker_threads_mutex);
 

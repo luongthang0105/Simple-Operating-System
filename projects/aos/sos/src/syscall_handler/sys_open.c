@@ -6,8 +6,9 @@
 #include <nfsc/libnfs.h>
 #include <sel4/sel4.h>
 #include "sys_read.h"
+#include "../network.h"
 
-void sos_open_callback(int err, struct nfs_context *nfs, void *data, void *private_data)
+void sos_open_callback(int err, UNUSED struct nfs_context *nfs, void *data, void *private_data)
 {
     sync_recursive_mutex_lock(worker_threads_mutex);
 

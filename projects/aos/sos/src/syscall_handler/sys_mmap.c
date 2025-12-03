@@ -66,6 +66,7 @@ long mmap_allocate_auto(size_t required_length, int prot, user_process_t *user_p
 long handle_sos_mmap() {
     ZF_LOGV("syscall:mmap!\n");
 
+    // ignore first argument addr because we don't take hints.
     size_t length = seL4_GetMR(2);
     int prot = seL4_GetMR(3);
 

@@ -88,12 +88,12 @@
  * generated for variables that are only used in compiled out log messages).
  */
 #if defined(ZF_LOG_LEVEL)
-	#define _ZF_LOG_LEVEL ZF_LOG_NONE
+	#define _ZF_LOG_LEVEL ZF_LOG_LEVEL
 #elif defined(ZF_LOG_DEF_LEVEL)
 	#define _ZF_LOG_LEVEL ZF_LOG_DEF_LEVEL
 #else
 	#ifdef NDEBUG
-		#define _ZF_LOG_LEVEL ZF_LOG_INFO
+		#define _ZF_LOG_LEVEL ZF_LOG_NONE
 	#else
 		#define _ZF_LOG_LEVEL ZF_LOG_DEBUG
 	#endif
